@@ -2,6 +2,7 @@ import React, { useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useStore } from './store'
 import { Toast } from './components/ui'
+import DeployButton from './components/DeployButton'
 
 // Screens
 import HomeScreen from './screens/HomeScreen'
@@ -75,6 +76,7 @@ export default function App() {
         </motion.div>
       </AnimatePresence>
       <Toast />
+      <DeployButton />
     </div>
   )
 }
