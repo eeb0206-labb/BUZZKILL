@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useStore } from '../../store'
+import AvatarSvg from '../AvatarSvg'
 
 // ── Toast ──────────────────────────────────────────────────────────────────────
 export function Toast() {
@@ -71,14 +72,30 @@ export function Modal({ show, onClose, title, children, centered = false }) {
 }
 
 // ── Avatar ─────────────────────────────────────────────────────────────────────
-export function Avatar({ src, name, colorHex, size = 40 }) {
+// Renders in priority order: avatarConfig (SVG) → src (photo) → placeholder (initial)
+export function Avatar({ src, name, colorHex, size = 40, avatarConfig }) {
+  if (avatarConfig) {
+    return (
+      <div
+        style={{
+          width: size, height: size, borderRadius: '50%',
+          overflow: 'hidden', flexShrink: 0,
+          border: `2px solid ${colorHex || 'var(--border)'}`,
+          background: 'var(--surface)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <AvatarSvg config={avatarConfig} size={size} showFull={false}/>
+      </div>
+    )
+  }
   if (src) {
     return (
       <img
         src={src}
         alt={name}
         className="avatar"
-        style={{ width: size, height: size }}
+        style={{ width: size, height: size, flexShrink: 0 }}
       />
     )
   }
@@ -90,6 +107,7 @@ export function Avatar({ src, name, colorHex, size = 40 }) {
         background: colorHex || '#321960',
         border: `2px solid ${colorHex || '#4895ef'}`,
         fontSize: size * 0.4,
+        flexShrink: 0,
       }}
     >
       {name?.[0]?.toUpperCase() || '?'}
@@ -223,15 +241,20 @@ export function TimerRing({ seconds, total, size = 80 }) {
 }
 
 // ── Podium ─────────────────────────────────────────────────────────────────────
-export function Podium({ players, showConfetti = false }) {
+export function Podium({ players }) {
   const sorted = [...players].sort((a, b) => b.score - a.score).slice(0, 4)
   const order = [1, 0, 2, 3] // visual order: 2nd, 1st, 3rd, 4th
   const display = order.map(i => sorted[i]).filter(Boolean)
+
+  // Avatar height for each rank — winner is tallest
+  const HEIGHTS = { 1: 96, 2: 80, 3: 72, 4: 64 }
 
   return (
     <div className="podium">
       {display.map((player, di) => {
         const actualRank = sorted.indexOf(player) + 1
+        const avH = HEIGHTS[actualRank] || 64
+
         return (
           <motion.div
             key={player.id}
@@ -240,11 +263,61 @@ export function Podium({ players, showConfetti = false }) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: di * 0.15, type: 'spring', stiffness: 300, damping: 25 }}
           >
-            <Avatar src={player.avatar} name={player.name} colorHex={player.colorHex} size={44} />
-            <div style={{ fontSize: '0.8rem', fontWeight: 700, textAlign: 'center' }}>{player.name}</div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text2)' }}>
+            {/* Full-body avatar — photo replaces head if available */}
+            <div style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center',
+              background: 'rgba(255,255,255,0.04)', borderRadius: 10,
+              padding: '6px 4px 0',
+              border: actualRank === 1 ? '1px solid rgba(244,208,63,0.3)' : '1px solid var(--border)',
+            }}>
+              {player.avatarConfig ? (
+                <AvatarSvg
+                  config={player.avatarConfig}
+                  size={avH}
+                  showFull
+                  photoSrc={player.avatar || null}
+                />
+              ) : player.avatar ? (
+                <img
+                  src={player.avatar}
+                  alt={player.name}
+                  style={{ width: avH * 0.7, height: avH * 0.7, borderRadius: '50%', objectFit: 'cover' }}
+                />
+              ) : (
+                <div style={{
+                  width: avH * 0.7, height: avH * 0.7, borderRadius: '50%',
+                  background: player.colorHex || '#321960',
+                  border: `2px solid ${player.colorHex || '#4895ef'}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: avH * 0.28, fontWeight: 700, color: '#fff',
+                }}>
+                  {player.name?.[0]?.toUpperCase() || '?'}
+                </div>
+              )}
+            </div>
+
+            {/* Name */}
+            <div style={{
+              fontSize: actualRank === 1 ? '0.82rem' : '0.75rem',
+              fontWeight: 700, textAlign: 'center',
+              maxWidth: 72, wordBreak: 'break-word', lineHeight: 1.2,
+              color: actualRank === 1 ? 'var(--gold)' : 'var(--text)',
+              marginTop: 4,
+            }}>
+              {player.name}
+            </div>
+
+            {/* Points */}
+            <div style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: actualRank === 1 ? '0.82rem' : '0.72rem',
+              color: actualRank === 1 ? 'var(--gold)' : 'var(--text2)',
+              fontWeight: 700,
+            }}>
               {player.score}pts
             </div>
+
+            {/* Podium block */}
             <div className={`podium-block podium-${actualRank}`}>
               {actualRank === 1 ? '👑' : actualRank === 2 ? '🥈' : actualRank === 3 ? '🥉' : '🎮'}
               <div className="podium-place">#{actualRank}</div>
@@ -439,7 +512,7 @@ export function PlayerList({ players, myId, showScore = false, onAction = null, 
           transition={{ delay: i * 0.06 }}
           style={{ borderColor: p.id === myId ? p.colorHex || 'var(--accent)' : 'var(--border)' }}
         >
-          <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={40} />
+          <Avatar src={p.avatar} avatarConfig={p.avatarConfig} name={p.name} colorHex={p.colorHex} size={40} />
           <div className="flex-1">
             <div className="row gap-8">
               <div style={{ fontWeight: 700 }}>{p.name}</div>

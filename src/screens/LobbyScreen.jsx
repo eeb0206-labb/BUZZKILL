@@ -1,10 +1,13 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useStore } from '../store'
 import { useGame } from '../hooks/useGame'
 import { Avatar, QRCode, Modal, Toast, MuteButton, CameraCapture } from '../components/ui'
 import { INSIDE_JOKE_CATEGORIES, ALL_GENRES } from '../data/genres'
 import { db, ref, update } from '../firebase'
+import AvatarCreator from '../components/AvatarCreator'
+import AvatarSvg from '../components/AvatarSvg'
+import { DEFAULT_AVATAR_CONFIG } from '../data/avatarParts'
 
 // ── settings helpers ────────────────────────────────────────────────────────────
 const TIMER_OPTIONS = [
@@ -38,8 +41,7 @@ function TimerSelect({ value, onChange, label }) {
 
 // ── role options ─────────────────────────────────────────────────────────────────
 const ROLE_OPTIONS = [
-  { role: 'player', icon: '🎮', title: 'Player' },
-  { role: 'cohost', icon: '🎛️', title: 'Co-host' },
+  { role: 'player',     icon: '🎮', title: 'Player' },
   { role: 'gamescreen', icon: '📺', title: 'TV Screen' },
 ]
 
@@ -117,40 +119,109 @@ function InsideJokeForm({ gameCode, myId, onAdded }) {
   )
 }
 
+// ── profile modal content (shared between host + player views) ────────────────
+function ProfileModalContent({ profileMode, setProfileMode, profileName, setProfileName, profileAvatarConfig, setProfileAvatarConfig, profilePhoto, setProfilePhoto, setProfilePhotoChanged, profileSaving, onCancel, onSave }) {
+  return (
+    <div className="col gap-12">
+      {/* Tab toggle */}
+      <div style={{ display: 'flex', background: 'var(--bg)', borderRadius: 10, padding: 3, gap: 3, border: '1px solid var(--border)' }}>
+        {[['name', '👤 Name'], ['avatar', '🎨 Avatar']].map(([id, label]) => (
+          <motion.button key={id} onClick={() => setProfileMode(id)} whileTap={{ scale: 0.97 }}
+            style={{
+              flex: 1, padding: '9px 4px', borderRadius: 8, border: 'none', cursor: 'pointer',
+              background: profileMode === id ? 'var(--accent)' : 'transparent',
+              color: profileMode === id ? '#fff' : 'var(--text2)',
+              fontWeight: profileMode === id ? 700 : 400, fontSize: '0.88rem',
+              fontFamily: 'var(--font-body)', transition: 'background 0.15s',
+            }}>
+            {label}
+          </motion.button>
+        ))}
+      </div>
+
+      <AnimatePresence mode="wait">
+        {profileMode === 'name' && (
+          <motion.div key="name" className="col gap-14"
+            initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }}>
+            <div>
+              <label className="input-label">Your Name</label>
+              <input className="input" value={profileName} onChange={e => setProfileName(e.target.value)}
+                maxLength={20} placeholder="Display name" autoFocus />
+            </div>
+            <div className="row gap-8">
+              <button className="btn btn-ghost flex-1" onClick={onCancel}>Cancel</button>
+              <button className="btn btn-primary flex-1" onClick={onSave} disabled={profileSaving}>
+                {profileSaving ? 'Saving...' : 'Save ✓'}
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {profileMode === 'avatar' && (
+          <motion.div key="avatar" className="col gap-12"
+            initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }}>
+            <AvatarCreator
+              config={profileAvatarConfig}
+              onChange={setProfileAvatarConfig}
+            />
+            <div className="row gap-8">
+              <button className="btn btn-ghost flex-1" onClick={onCancel}>Cancel</button>
+              <button className="btn btn-primary flex-1" onClick={onSave} disabled={profileSaving}>
+                {profileSaving ? 'Saving...' : 'Save ✓'}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
 // ── player card (host view) ──────────────────────────────────────────────────────
-function PlayerCard({ player, isMe, onRoleChange }) {
-  const isCreator = player.role === 'host'
+function PlayerCard({ player, isMe, hostId, onRoleChange, onTransferHost }) {
+  const isCurrentHost = player.id === hostId
   return (
     <motion.div className="card col center gap-8" initial={{ opacity: 0, scale: 0.88 }}
       animate={{ opacity: 1, scale: 1 }} layout
       style={{ padding: '14px 10px', position: 'relative', textAlign: 'center' }}>
-      {isCreator && (
+      {isCurrentHost && (
         <div style={{ position: 'absolute', top: 6, right: 6, fontSize: '0.6rem', fontWeight: 700,
           letterSpacing: '0.06em', color: 'var(--gold)', background: 'rgba(244,208,63,0.12)',
           borderRadius: 4, padding: '2px 5px' }}>HOST</div>
       )}
-      <Avatar src={player.avatar} name={player.name} colorHex={player.colorHex} size={56} />
+      <Avatar src={player.avatar} avatarConfig={player.avatarConfig} name={player.name} colorHex={player.colorHex} size={56} />
       <div style={{ fontWeight: 700, fontSize: '0.9rem', wordBreak: 'break-word', lineHeight: 1.2 }}>
         {player.name}
         {isMe && <span style={{ color: 'var(--text3)', fontWeight: 400, fontSize: '0.8rem' }}> (you)</span>}
       </div>
-      {!isCreator && (
-        <div style={{ display: 'flex', gap: 3, justifyContent: 'center', flexWrap: 'wrap' }}>
-          {ROLE_OPTIONS.map(({ role, icon, title }) => {
-            const active = player.role === role
-            return (
-              <motion.button key={role} title={title} onClick={() => onRoleChange(player.id, role)}
-                whileTap={{ scale: 0.9 }}
-                style={{ padding: '3px 7px', borderRadius: 7, whiteSpace: 'nowrap', cursor: 'pointer',
-                  border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border2)'}`,
-                  background: active ? 'rgba(192,132,252,0.2)' : 'transparent',
-                  color: active ? 'var(--accent)' : 'var(--text3)',
-                  fontSize: '0.75rem', fontWeight: active ? 700 : 400, transition: 'all 0.15s' }}>
-                {icon} {title}
-              </motion.button>
-            )
-          })}
-        </div>
+      {/* Role buttons — shown for everyone, including host (so host can become TV Screen) */}
+      <div style={{ display: 'flex', gap: 3, justifyContent: 'center', flexWrap: 'wrap' }}>
+        {ROLE_OPTIONS.map(({ role, icon, title }) => {
+          const active = player.role === role || (isCurrentHost && role === 'player')
+          return (
+            <motion.button key={role} title={title} onClick={() => onRoleChange(player.id, role)}
+              whileTap={{ scale: 0.9 }}
+              style={{ padding: '3px 7px', borderRadius: 7, whiteSpace: 'nowrap', cursor: 'pointer',
+                border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border2)'}`,
+                background: active ? 'rgba(192,132,252,0.2)' : 'transparent',
+                color: active ? 'var(--accent)' : 'var(--text3)',
+                fontSize: '0.75rem', fontWeight: active ? 700 : 400, transition: 'all 0.15s' }}>
+              {icon} {title}
+            </motion.button>
+          )
+        })}
+      </div>
+      {/* Transfer host button — only on other players' cards (not yourself, not already host) */}
+      {!isMe && !isCurrentHost && onTransferHost && (
+        <motion.button
+          className="btn btn-ghost btn-sm"
+          style={{ fontSize: '0.72rem', color: 'var(--gold)', borderColor: 'rgba(244,208,63,0.3)', padding: '2px 8px' }}
+          whileTap={{ scale: 0.9 }}
+          onClick={() => onTransferHost(player.id)}
+          title="Give this player host controls"
+        >
+          👑 Make Host
+        </motion.button>
       )}
     </motion.div>
   )
@@ -369,7 +440,9 @@ export default function LobbyScreen() {
   const gameCode = store.gameCode
   const isHost = store.isHost()
   const isController = store.isController()
-  const { subscribeToGame, startGame, updateGame, updatePlayer } = useGame()
+  // Show host controls if you're the controller OR you're the Firebase host (even set as TV screen)
+  const showHostView = isController || isHost
+  const { subscribeToGame, startGame, updateGame, updatePlayer, transferHost } = useGame()
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState('game')
@@ -381,6 +454,10 @@ export default function LobbyScreen() {
   const [profileOpen, setProfileOpen] = useState(false)
   const [profileName, setProfileName] = useState('')
   const [profilePhoto, setProfilePhoto] = useState(null)
+  const [profilePhotoChanged, setProfilePhotoChanged] = useState(false)
+  const [profileAvatarConfig, setProfileAvatarConfig] = useState(null)
+  const [profileAvatarChanged, setProfileAvatarChanged] = useState(false)
+  const [profileMode, setProfileMode] = useState('name') // 'name' | 'avatar'
   const [profileSaving, setProfileSaving] = useState(false)
   const [playerTab, setPlayerTab] = useState('jokes') // 'jokes' | 'rules'
 
@@ -393,7 +470,11 @@ export default function LobbyScreen() {
     const unsub = subscribeToGame(gameCode, (g) => {
       if (g.state === 'round-pick') store.setScreen('round-pick')
       const myPlayer = g.players?.[myId]
-      if (myPlayer?.role && myPlayer.role !== store.myRole) store.setMyRole(myPlayer.role)
+      if (myPlayer?.role) {
+        // Use getState() to avoid stale closure — myRole changes after initial mount
+        const currentRole = useStore.getState().myRole
+        if (myPlayer.role !== currentRole) useStore.getState().setMyRole(myPlayer.role)
+      }
     })
     return unsub
   }, [gameCode])
@@ -410,7 +491,7 @@ export default function LobbyScreen() {
 
   async function handleStartGame() {
     const count = players.filter(p => ['host', 'player', 'cohost'].includes(p.role)).length
-    if (count < 2) { store.setToast({ message: 'Need at least 2 people to start!', icon: '⚠️' }); return }
+    if (count < 1) { store.setToast({ message: 'Need at least 1 player to start!', icon: '⚠️' }); return }
     await startGame(gameCode)
   }
 
@@ -419,6 +500,12 @@ export default function LobbyScreen() {
     if (newRole === 'gamescreen') updates[`games/${gameCode}/screens/tv`] = playerId
     else if (game?.screens?.tv === playerId) updates[`games/${gameCode}/screens/tv`] = null
     await update(ref(db), updates)
+  }
+
+  async function handleTransferHost(toPlayerId) {
+    if (!myId || !toPlayerId) return
+    await transferHost(gameCode, myId, toPlayerId)
+    // Our own role will be updated by the Firebase subscription → isController becomes false → UI switches
   }
 
   function openSettings() {
@@ -438,15 +525,23 @@ export default function LobbyScreen() {
     const me = game?.players?.[myId]
     setProfileName(me?.name || store.myName || '')
     setProfilePhoto(me?.avatar || null)
+    setProfilePhotoChanged(false)
+    setProfileAvatarConfig(me?.avatarConfig || store.myAvatarConfig || DEFAULT_AVATAR_CONFIG)
+    setProfileAvatarChanged(false)
+    setProfileMode('name')
     setProfileOpen(true)
   }
 
   async function saveProfile() {
     if (!profileName.trim()) { store.setToast({ message: 'Name can\'t be empty', icon: '⚠️' }); return }
     setProfileSaving(true)
-    await updatePlayer(gameCode, myId, { name: profileName.trim(), avatar: profilePhoto })
+    const updates = { name: profileName.trim() }
+    if (profilePhotoChanged) updates.avatar = profilePhoto
+    if (profileAvatarChanged) updates.avatarConfig = profileAvatarConfig
+    await updatePlayer(gameCode, myId, updates)
     store.setMyName(profileName.trim())
-    if (profilePhoto) store.setMyAvatar(profilePhoto)
+    if (profilePhotoChanged && profilePhoto) store.setMyAvatar(profilePhoto)
+    if (profileAvatarChanged && profileAvatarConfig) store.setMyAvatarConfig(profileAvatarConfig)
     setProfileSaving(false); setProfileOpen(false)
     store.setToast({ message: 'Profile updated ✓', icon: '👤' })
   }
@@ -472,7 +567,10 @@ export default function LobbyScreen() {
       </button>
       <div className="topbar-logo">Lobby</div>
       <div className="row gap-4">
-        {isHost && (
+        {store.isGameScreen() && isHost && (
+          <div style={{ fontSize: '0.65rem', color: 'var(--accent)', background: 'rgba(192,132,252,0.15)', borderRadius: 4, padding: '2px 6px', fontWeight: 700 }}>📺 TV+HOST</div>
+        )}
+        {(isController || isHost) && (
           <motion.button className="btn btn-ghost btn-sm" onClick={openSettings} whileTap={{ scale: 0.9 }}
             title="Game settings" style={{ fontSize: '1rem', padding: '6px 8px' }}>⚙️</motion.button>
         )}
@@ -518,8 +616,8 @@ export default function LobbyScreen() {
     </AnimatePresence>
   )
 
-  // ── HOST VIEW ────────────────────────────────────────────────────────────────
-  if (isController) {
+  // ── HOST VIEW (also shown if host is in TV screen role) ─────────────────────
+  if (showHostView) {
     return (
       <div className="screen">
         {topbar}
@@ -552,6 +650,29 @@ export default function LobbyScreen() {
             </div>
           </div>
 
+          {/* My profile strip (host can edit too) */}
+          <motion.div
+            className="card"
+            style={{ padding: '10px 14px', cursor: 'pointer' }}
+            onClick={openProfile}
+            whileTap={{ scale: 0.98 }}
+          >
+            <div className="row gap-10" style={{ alignItems: 'center' }}>
+              <Avatar
+                src={myPlayer?.avatar || null}
+                avatarConfig={myPlayer?.avatarConfig || null}
+                name={myPlayer?.name || store.myName}
+                colorHex={myPlayer?.colorHex}
+                size={44}
+              />
+              <div className="flex-1">
+                <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{myPlayer?.name || store.myName || 'Host'}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>Tap to edit your avatar ✏️</div>
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--gold)', background: 'rgba(244,208,63,0.1)', padding: '2px 7px', borderRadius: 5, fontWeight: 700 }}>HOST</div>
+            </div>
+          </motion.div>
+
           {/* Players */}
           <div>
             <div style={{ fontSize: '0.72rem', color: 'var(--text3)', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>
@@ -560,7 +681,14 @@ export default function LobbyScreen() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
               <AnimatePresence>
                 {players.map(p => (
-                  <PlayerCard key={p.id} player={p} isMe={p.id === myId} onRoleChange={changePlayerRole} />
+                  <PlayerCard
+                    key={p.id}
+                    player={p}
+                    isMe={p.id === myId}
+                    hostId={game?.hostId}
+                    onRoleChange={changePlayerRole}
+                    onTransferHost={handleTransferHost}
+                  />
                 ))}
               </AnimatePresence>
               {players.length === 0 && (
@@ -604,6 +732,21 @@ export default function LobbyScreen() {
           )}
         </Modal>
 
+        {/* Profile edit modal (host) */}
+        <Modal show={profileOpen} onClose={() => setProfileOpen(false)} title="✏️ Edit Profile">
+          <ProfileModalContent
+            profileMode={profileMode} setProfileMode={setProfileMode}
+            profileName={profileName} setProfileName={setProfileName}
+            profileAvatarConfig={profileAvatarConfig}
+            setProfileAvatarConfig={v => { setProfileAvatarConfig(v); setProfileAvatarChanged(true) }}
+            profilePhoto={profilePhoto} setProfilePhoto={setProfilePhoto}
+            setProfilePhotoChanged={setProfilePhotoChanged}
+            profileSaving={profileSaving}
+            onCancel={() => setProfileOpen(false)}
+            onSave={saveProfile}
+          />
+        </Modal>
+
         {qrOverlay}
         <Toast />
       </div>
@@ -627,13 +770,14 @@ export default function LobbyScreen() {
           <div className="row gap-10" style={{ alignItems: 'center' }}>
             <Avatar
               src={myPlayer?.avatar || null}
+              avatarConfig={myPlayer?.avatarConfig || null}
               name={myPlayer?.name || store.myName}
               colorHex={myPlayer?.colorHex}
               size={44}
             />
             <div className="flex-1">
               <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{myPlayer?.name || store.myName}</div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>Tap to edit your name or photo</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>Tap to edit your avatar ✏️</div>
             </div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text3)' }}>✏️</div>
           </div>
@@ -737,13 +881,20 @@ export default function LobbyScreen() {
               <div className="col center" style={{ gap: 8, marginBottom: 12 }}>
                 <img src={profilePhoto} alt="current"
                   style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover' }} />
-                <button className="btn btn-ghost btn-sm" onClick={() => setProfilePhoto(null)}>Remove photo</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setProfilePhoto(null); setProfilePhotoChanged(true) }}>Remove photo</button>
               </div>
             )}
-            <CameraCapture
-              onCapture={data => setProfilePhoto(data)}
-              onSkip={null}
-            />
+            {!profilePhoto ? (
+              <CameraCapture
+                onCapture={data => { setProfilePhoto(data); setProfilePhotoChanged(true) }}
+                onSkip={null}
+              />
+            ) : (
+              <button className="btn btn-ghost btn-sm" onClick={() => { setProfilePhoto(null); setProfilePhotoChanged(true) }}
+                style={{ alignSelf: 'flex-start' }}>
+                📷 Retake / Change
+              </button>
+            )}
           </div>
           <div className="row gap-8">
             <button className="btn btn-ghost flex-1" onClick={() => setProfileOpen(false)}>Cancel</button>

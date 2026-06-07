@@ -20,7 +20,7 @@ export default function PowerupSelectScreen() {
   const { game, myId, gameCode } = { game: store.game, myId: store.myId, gameCode: store.gameCode }
   const isController = store.isController()
   const setScreen = store.setScreen
-  const { subscribeToGame, activatePowerupRound, loadFirstQuestion } = useGame()
+  const { subscribeToGame, activatePowerupRound, usePowerup, loadFirstQuestion, startLawyers } = useGame()
   const { playPowerupActivate, playPowerupDeactivate } = useSound()
 
   const [activated, setActivated] = useState(false)
@@ -34,23 +34,41 @@ export default function PowerupSelectScreen() {
   useEffect(() => {
     if (!gameCode) return
     const unsub = subscribeToGame(gameCode, (g) => {
-      if (g.state === 'quiz') setScreen('quiz-host')
+      if (g.state === 'quiz') {
+        // Route draw game types to draw screen instead of quiz
+        if (g.currentGenre?.gameType === 'draw') {
+          setScreen('draw')
+        } else {
+          setScreen('quiz-host')
+        }
+      }
+      // Creative rounds that use a custom state name still route via quiz-host → App.jsx routes further
+      if (g.state === 'lawyers') {
+        setScreen('quiz-host')
+      }
     })
     return unsub
   }, [gameCode])
 
   async function toggleDoublePoints() {
-    if (!myId) return
-    const newVal = !isActive
-    await activatePowerupRound(gameCode, myId, newVal)
-    if (newVal) { setActivated(true); playPowerupActivate() }
-    else { setActivated(false); playPowerupDeactivate() }
+    if (!myId || isActive) return  // one-way — can't undo once spent
+    const consumed = await usePowerup(gameCode, myId, 'doublePoints')
+    if (!consumed) return
+    await activatePowerupRound(gameCode, myId, true)
+    setActivated(true)
+    playPowerupActivate()
   }
 
   async function handleStart() {
     if (!isController) return
     setConfirmed(true)
-    await update(ref(db, `games/${gameCode}`), { state: 'quiz', currentQIndex: 0, currentQ: null })
+    const gameType = genre?.gameType
+    if (gameType === 'lawyers') {
+      // Outlandish Lawyers — pick 2 players + statement, set state to 'lawyers'
+      await startLawyers(gameCode, game)
+    } else {
+      await update(ref(db, `games/${gameCode}`), { state: 'quiz', currentQIndex: 0, currentQ: null })
+    }
   }
 
   const genre = game?.currentGenre
@@ -60,7 +78,8 @@ export default function PowerupSelectScreen() {
     .map(([id]) => game?.players?.[id])
     .filter(Boolean)
 
-  const isPlayer = !isController && !store.isGameScreen()
+  // host AND players both see powerups — only game screen is excluded
+  const isPlayer = !store.isGameScreen()
 
   return (
     <div className="screen">
@@ -86,44 +105,38 @@ export default function PowerupSelectScreen() {
           </motion.div>
         )}
 
-        {/* Double Points activation (for players with it) */}
-        {isPlayer && hasDoublePoints && (
+        {/* Double Points activation */}
+        {isPlayer && (hasDoublePoints || isActive) && (
           <motion.div
             className={`powerup-banner ${isActive ? 'active' : ''}`}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
           >
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>⚡ Use your powerup?</div>
-            <motion.button
-              className={`btn btn-block ${isActive ? 'btn-gold' : 'btn-ghost'}`}
-              onClick={toggleDoublePoints}
-              whileTap={{ scale: 0.96 }}
-            >
-              {isActive ? '✖️ Double Points ACTIVE! (tap to cancel)' : '✖️ Activate Double Points'}
-            </motion.button>
-            {isActive && (
-              <motion.p
-                style={{ fontSize: '0.8rem', color: 'var(--gold)', marginTop: 8, textAlign: 'center' }}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>⚡ Double Points Powerup</div>
+            {isActive ? (
+              <motion.div
+                className="btn btn-gold btn-block"
+                style={{ cursor: 'default', opacity: 0.95 }}
+                initial={{ scale: 0.95 }} animate={{ scale: 1 }}
               >
-                All your points this round will be doubled! 🎉
-              </motion.p>
+                ✖️ Double Points ACTIVE ✓
+              </motion.div>
+            ) : (
+              <motion.button
+                className="btn btn-ghost btn-block"
+                onClick={toggleDoublePoints}
+                whileTap={{ scale: 0.96 }}
+              >
+                ✖️ Activate Double Points
+              </motion.button>
             )}
-          </motion.div>
-        )}
-
-        {/* No double points */}
-        {isPlayer && !hasDoublePoints && (
-          <motion.div
-            className="card center"
-            style={{ color: 'var(--text3)', fontSize: '0.85rem', padding: 20 }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.2 }}
-          >
-            Your Double Points powerup has been used.
+            <motion.p
+              style={{ fontSize: '0.8rem', color: isActive ? 'var(--gold)' : 'var(--text3)', marginTop: 8, textAlign: 'center' }}
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            >
+              {isActive ? 'All your points this round will be doubled! 🎉' : 'Activate once — cannot be undone.'}
+            </motion.p>
           </motion.div>
         )}
 

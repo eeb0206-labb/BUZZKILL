@@ -2,20 +2,26 @@ import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useStore } from '../store'
 import { useGame } from '../hooks/useGame'
-import { CameraCapture, Toast, MuteButton } from '../components/ui'
+import { Toast, MuteButton } from '../components/ui'
+import AvatarCreator from '../components/AvatarCreator'
+import { DEFAULT_AVATAR_CONFIG, randomAvatarConfig } from '../data/avatarParts'
 
 export default function JoinScreen() {
-  const setScreen = useStore(s => s.setScreen)
-  const setToast = useStore(s => s.setToast)
-  const setMyAvatar = useStore(s => s.setMyAvatar)
+  const store = useStore()
+  const setScreen = store.setScreen
+  const setToast = store.setToast
   const { joinGame } = useGame()
 
-  const [step, setStep] = useState('code') // 'code' | 'name' | 'photo'
+  const [step, setStep] = useState('code')   // 'code' | 'name' | 'avatar'
   const [code, setCode] = useState('')
-  const [name, setName] = useState('')
-  const [avatar, setAvatar] = useState(null)
+  const [name, setName] = useState(store.myName || '')
+  // Pre-populate avatarConfig from store if available, else random
+  const [avatarConfig, setAvatarConfig] = useState(
+    () => store.myAvatarConfig || randomAvatarConfig()
+  )
   const [loading, setLoading] = useState(false)
 
+  // Pre-fill code from URL ?code= param
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const c = params.get('code')
@@ -35,15 +41,15 @@ export default function JoinScreen() {
       setToast({ message: 'Enter your name', icon: '👤' })
       return
     }
-    setStep('photo')
+    setStep('avatar')
   }
 
-  const handleJoin = async (avatarData) => {
+  const handleJoin = async () => {
+    if (loading) return
     setLoading(true)
-    const av = avatarData || avatar
     try {
-      await joinGame(code.toUpperCase(), name.trim(), av, 'player')
-      if (av) setMyAvatar(av)
+      await joinGame(code.toUpperCase(), name.trim(), null, 'player', avatarConfig)
+      store.setMyAvatarConfig(avatarConfig)
       setScreen('lobby')
     } catch (e) {
       setToast({ message: e.message || 'Could not join game. Check the code.', icon: '❌' })
@@ -52,30 +58,42 @@ export default function JoinScreen() {
     }
   }
 
+  const stepNum = step === 'code' ? 1 : step === 'name' ? 2 : 3
+  const progress = stepNum / 3
+
+  function goBack() {
+    if (step === 'code') setScreen('home')
+    else if (step === 'name') setStep('code')
+    else setStep('name')
+  }
+
   return (
     <div className="screen">
       <div className="topbar">
-        <button className="btn btn-ghost btn-sm" onClick={() => step === 'code' ? setScreen('home') : setStep(step === 'name' ? 'code' : 'name')}>
-          ← Back
-        </button>
+        <button className="btn btn-ghost btn-sm" onClick={goBack}>← Back</button>
         <div className="topbar-logo">Join Game</div>
         <MuteButton />
       </div>
 
-      <div className="progress-bar" style={{ margin: '0', borderRadius: 0 }}>
-        <div className="progress-fill" style={{ width: `${step === 'code' ? 33 : step === 'name' ? 66 : 100}%` }} />
+      {/* Progress bar */}
+      <div className="progress-bar" style={{ margin: 0, borderRadius: 0 }}>
+        <motion.div
+          className="progress-fill"
+          animate={{ width: `${progress * 100}%` }}
+          transition={{ duration: 0.3 }}
+        />
       </div>
 
-      <div className="screen-inner center" style={{ justifyContent: 'center' }}>
+      <div className="screen-inner center" style={{ justifyContent: step === 'avatar' ? 'flex-start' : 'center', paddingTop: step === 'avatar' ? 16 : 0 }}>
         <AnimatePresence mode="wait">
+
+          {/* ── Step 1: Game Code ───────────────────────────────────────────── */}
           {step === 'code' && (
             <motion.div
               key="code"
               className="col center gap-16"
               style={{ width: '100%', maxWidth: 360 }}
-              initial={{ opacity: 0, x: 30 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -30 }}
+              initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
             >
               <div className="col center gap-8">
                 <div style={{ fontSize: '3rem' }}>🎮</div>
@@ -99,14 +117,13 @@ export default function JoinScreen() {
             </motion.div>
           )}
 
+          {/* ── Step 2: Name ─────────────────────────────────────────────────── */}
           {step === 'name' && (
             <motion.div
               key="name"
               className="col center gap-16"
               style={{ width: '100%', maxWidth: 360 }}
-              initial={{ opacity: 0, x: 30 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -30 }}
+              initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
             >
               <div className="col center gap-8">
                 <div style={{ fontSize: '3rem' }}>👤</div>
@@ -129,27 +146,35 @@ export default function JoinScreen() {
             </motion.div>
           )}
 
-          {step === 'photo' && (
+          {/* ── Step 3: Avatar Builder ────────────────────────────────────────── */}
+          {step === 'avatar' && (
             <motion.div
-              key="photo"
-              className="col center gap-16"
-              style={{ width: '100%', maxWidth: 360 }}
-              initial={{ opacity: 0, x: 30 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -30 }}
+              key="avatar"
+              className="col gap-16"
+              style={{ width: '100%', maxWidth: 440 }}
+              initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
             >
-              <div className="col center gap-8">
-                <div style={{ fontSize: '3rem' }}>📸</div>
-                <h2>Take a selfie!</h2>
-                <p className="muted" style={{ fontSize: '0.9rem' }}>Optional — it shows next to your name</p>
+              <div className="col center gap-4">
+                <h2 style={{ textAlign: 'center' }}>Build your character</h2>
+                <p className="muted" style={{ fontSize: '0.85rem', textAlign: 'center' }}>Customise your avatar — or just go random!</p>
               </div>
-              <CameraCapture
-                onCapture={data => { setAvatar(data); handleJoin(data) }}
-                onSkip={() => handleJoin(null)}
-              />
-              {loading && <div className="loading-dots"><span /><span /><span /></div>}
+
+              <AvatarCreator config={avatarConfig} onChange={setAvatarConfig} />
+
+              <motion.button
+                className="btn btn-primary btn-lg btn-block"
+                whileTap={{ scale: 0.97 }}
+                onClick={handleJoin}
+                disabled={loading}
+                style={{ marginTop: 8 }}
+              >
+                {loading ? (
+                  <div className="loading-dots"><span /><span /><span /></div>
+                ) : `Join as ${name} →`}
+              </motion.button>
             </motion.div>
           )}
+
         </AnimatePresence>
       </div>
       <Toast />

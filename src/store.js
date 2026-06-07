@@ -33,28 +33,38 @@ const DEFAULT_SETTINGS = {
 // Saves critical identity + navigation to localStorage so page reloads
 // (e.g. phone screen-off/browser tab refresh) restore the user to the right place.
 const SESSION_KEY = 'buzzkill_session'
+const AUDIO_KEY = 'buzzkill_audio'
 function loadSession() {
   try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null') } catch { return null }
+}
+function loadAudio() {
+  try { return JSON.parse(localStorage.getItem(AUDIO_KEY) || 'null') } catch { return null }
 }
 function saveSession(state) {
   try {
     localStorage.setItem(SESSION_KEY, JSON.stringify({
       myId: state.myId, myName: state.myName, myAvatar: state.myAvatar,
+      myAvatarConfig: state.myAvatarConfig,
       myRole: state.myRole, gameCode: state.gameCode,
-      // Only restore to in-game screens — home/create/join are stateless
-      screen: ['lobby','round-pick','powerup-select','quiz-host','round-over','final','vote'].includes(state.screen)
+      screen: ['lobby','round-pick','powerup-select','quiz-host','draw','round-over','final','vote'].includes(state.screen)
         ? state.screen : null,
+    }))
+    localStorage.setItem(AUDIO_KEY, JSON.stringify({
+      sfxVolume: state.sfxVolume, musicVolume: state.musicVolume,
+      sfxEnabled: state.sfxEnabled, musicEnabled: state.musicEnabled,
     }))
   } catch {}
 }
 const _saved = loadSession()
+const _audio = loadAudio()
 
 export const useStore = create((set, get) => ({
   // Local identity (restored from localStorage if available)
   myId: _saved?.myId || null,
   myName: _saved?.myName || '',
   myAvatar: _saved?.myAvatar || null,
-  myRole: _saved?.myRole || 'player', // 'host' | 'cohost' | 'player' | 'gamescreen'
+  myAvatarConfig: _saved?.myAvatarConfig || null,
+  myRole: _saved?.myRole || 'player', // 'host' | 'player' | 'gamescreen'
   myColor: '#e63946',
 
   // Game state (mirrored from Firebase)
@@ -69,16 +79,29 @@ export const useStore = create((set, get) => ({
   muted: false,
   direction: 1, // page transition direction
 
+  // Volume controls (persisted in localStorage via AUDIO_KEY)
+  sfxVolume: _audio?.sfxVolume ?? 0.85,
+  musicVolume: _audio?.musicVolume ?? 0.6,
+  sfxEnabled: _audio?.sfxEnabled ?? true,
+  musicEnabled: _audio?.musicEnabled ?? true,
+  gamePaused: false,
+
   setScreen: (screen, direction = 1) => set({ screen, direction }),
   setMyId: (myId) => set({ myId }),
   setMyName: (myName) => set({ myName }),
   setMyAvatar: (myAvatar) => set({ myAvatar }),
+  setMyAvatarConfig: (myAvatarConfig) => set({ myAvatarConfig }),
   setMyRole: (myRole) => set({ myRole }),
   setMyColor: (myColor) => set({ myColor }),
   setGameCode: (gameCode) => set({ gameCode }),
   setGame: (game) => set({ game }),
   setToast: (toast) => set({ toast }),
   setMuted: (muted) => set({ muted }),
+  setSfxVolume: (v) => set({ sfxVolume: v }),
+  setMusicVolume: (v) => set({ musicVolume: v }),
+  setSfxEnabled: (v) => set({ sfxEnabled: v }),
+  setMusicEnabled: (v) => set({ musicEnabled: v }),
+  setGamePaused: (v) => set({ gamePaused: v }),
 
   // Derived helpers
   getMe: () => {
@@ -95,7 +118,7 @@ export const useStore = create((set, get) => ({
   },
   isController: () => {
     const { myRole } = get()
-    return myRole === 'host' || myRole === 'cohost'
+    return myRole === 'host'
   },
   isGameScreen: () => {
     const { myRole } = get()

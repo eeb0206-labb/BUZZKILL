@@ -1,8 +1,24 @@
 import { useCallback } from 'react'
 import { db, ref, set, get, update, onValue, push, remove } from '../firebase'
 import { useStore } from '../store'
-import { PLAYER_COLORS, getRandomGenres } from '../data/genres'
+import { PLAYER_COLORS, getRandomGenres, getGenreById } from '../data/genres'
 import { DEFAULT_SETTINGS } from '../store'
+
+// ── fuzzy answer matching (shared) ────────────────────────────────────────────
+function answersMatch(submitted, correct) {
+  if (!submitted || !correct) return false
+  const stopWords = new Set(['the','a','an','of','in','at','for','to','and','or','is','was'])
+  const norm = s => s.toLowerCase().trim().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ')
+  const strip = s => s.split(' ').filter(w => w && !stopWords.has(w)).join(' ')
+  const a = norm(submitted)
+  const b = norm(correct)
+  if (a === b || a.includes(b) || b.includes(a)) return true
+  const as = strip(a); const bs = strip(b)
+  if (as && bs && (as === bs || as.includes(bs) || bs.includes(as))) return true
+  const bWords = bs.split(' ').filter(w => w.length > 2)
+  if (bWords.length >= 2 && bWords.every(w => as.includes(w))) return true
+  return false
+}
 
 // ── code generation ────────────────────────────────────────────────────────────
 export function generateCode() {
@@ -84,6 +100,7 @@ export function useGame() {
           id: hostId,
           name: hostName,
           avatar: null,
+          avatarConfig: store.myAvatarConfig || null,
           colorId: color.id,
           colorHex: color.hex,
           role: 'host',
@@ -109,7 +126,7 @@ export function useGame() {
   }, [store])
 
   // Join an existing game
-  const joinGame = useCallback(async (code, name, avatar, role = 'player') => {
+  const joinGame = useCallback(async (code, name, avatar, role = 'player', avatarConfig = null) => {
     const snap = await get(ref(db, `games/${code}`))
     if (!snap.exists()) throw new Error('Game not found')
 
@@ -124,6 +141,7 @@ export function useGame() {
       id: playerId,
       name,
       avatar: avatar || null,
+      avatarConfig: avatarConfig || null,
       colorId: color.id,
       colorHex: color.hex,
       role,
@@ -176,6 +194,7 @@ export function useGame() {
     const genres = getRandomGenres(3, excluded, used)
     await update(ref(db, `games/${code}`), {
       dealGenres: genres.map(g => g.id),
+      dealGenresAt: Date.now(), // timestamp used to sync the countdown timer across all devices
       roundVotes: {},
     })
     return genres
@@ -239,11 +258,18 @@ export function useGame() {
     updates[`games/${code}/players/${buzzerId}/roundScore`] = (player.roundScore || 0) + delta
 
     if (!correct) {
-      // Add to wrong answerers
+      // Add to wrong answerers list
       const newWrong = [...wrongAnswerers, buzzerId]
       updates[`games/${code}/wrongAnswerers`] = newWrong
-    } else {
-      // Clear wrong answerers for next question cycle
+      // Track the question itself for Redemption Arc
+      if (game.currentQ?.q) {
+        const wrongQ = { q: game.currentQ.q, a: game.currentQ.a, hint: game.currentQ.hint || '' }
+        const existingSnap = await get(ref(db, `games/${code}/playerWrongAnswers/${buzzerId}`))
+        const existing = existingSnap.val() || []
+        if (!existing.some(w => w.q === wrongQ.q)) {
+          updates[`games/${code}/playerWrongAnswers/${buzzerId}`] = [...existing, wrongQ]
+        }
+      }
     }
 
     // Award plagiarists
@@ -413,6 +439,74 @@ export function useGame() {
     await update(ref(db, `games/${code}/players/${playerId}`), { secondLifeUsed: true })
   }, [])
 
+  // Transfer host role to another player
+  const transferHost = useCallback(async (code, fromId, toId) => {
+    await update(ref(db), {
+      [`games/${code}/hostId`]: toId,
+      [`games/${code}/players/${toId}/role`]: 'host',
+      [`games/${code}/players/${fromId}/role`]: 'player',
+    })
+  }, [])
+
+  // Steal a powerup from a target player (takes their highest-value one)
+  const stealPowerup = useCallback(async (code, fromId, targetId, powerupKey) => {
+    const success = await usePowerup(code, fromId, 'steal')
+    if (!success) return false
+    // Decrement target's powerup
+    const snap = await get(ref(db, `games/${code}/players/${targetId}/powerups/${powerupKey}`))
+    const current = snap.val() || 0
+    if (current <= 0) return false
+    // Give to stealer, take from target
+    const mySnap = await get(ref(db, `games/${code}/players/${fromId}/powerups/${powerupKey}`))
+    const myCount = mySnap.val() || 0
+    await update(ref(db), {
+      [`games/${code}/players/${targetId}/powerups/${powerupKey}`]: current - 1,
+      [`games/${code}/players/${fromId}/powerups/${powerupKey}`]: myCount + 1,
+    })
+    return true
+  }, [usePowerup])
+
+  // Save drawing strokes for Draw It game
+  const saveDrawing = useCallback(async (code, dataUrl, drawerId, prompt) => {
+    await update(ref(db, `games/${code}`), {
+      drawingData: dataUrl,
+      drawerId,
+      drawPrompt: prompt,
+    })
+  }, [])
+
+  // Submit a drawing guess
+  const submitDrawGuess = useCallback(async (code, game, playerId, guess) => {
+    const correct = answersMatch(guess, game.drawPrompt || '')
+    if (correct) {
+      const player = game.players?.[playerId]
+      const pts = 100 * (game.powerupRound?.[playerId] ? 2 : 1)
+      await update(ref(db), {
+        [`games/${code}/players/${playerId}/score`]: (player?.score || 0) + pts,
+        [`games/${code}/players/${playerId}/roundScore`]: (player?.roundScore || 0) + pts,
+        [`games/${code}/drawWinner`]: playerId,
+        [`games/${code}/drawWinGuess`]: guess,
+      })
+    }
+    return correct
+  }, [])
+
+  // Advance draw round to next prompt (or end)
+  const advanceDrawRound = useCallback(async (code, game) => {
+    const nextIdx = (game.drawPromptIndex || 0) + 1
+    const questionsPerRound = game.settings?.questionsPerRound || 8
+    if (nextIdx >= questionsPerRound) {
+      await update(ref(db, `games/${code}`), { state: 'round-over' })
+    } else {
+      await update(ref(db, `games/${code}`), {
+        drawPromptIndex: nextIdx,
+        drawingData: null,
+        drawWinner: null,
+        drawWinGuess: null,
+      })
+    }
+  }, [])
+
   // Imposter: force a player to answer
   const forceAnswer = useCallback(async (code, fromId, targetId) => {
     const success = await usePowerup(code, fromId, 'imposter')
@@ -425,6 +519,464 @@ export function useGame() {
     return success
   }, [usePowerup])
 
+  // ── Return to lobby (play again — same players, scores reset) ────────────────
+  const returnToLobby = useCallback(async (code, game) => {
+    const playerUpdates = {}
+    Object.values(game?.players || {}).forEach(p => {
+      playerUpdates[`games/${code}/players/${p.id}/score`] = 0
+      playerUpdates[`games/${code}/players/${p.id}/roundScore`] = 0
+      playerUpdates[`games/${code}/players/${p.id}/powerups`] = buildInitialPowerups(game?.settings)
+      playerUpdates[`games/${code}/players/${p.id}/secondLifeUsed`] = false
+    })
+    await update(ref(db), {
+      ...playerUpdates,
+      [`games/${code}/state`]: 'lobby',
+      [`games/${code}/currentRound`]: 0,
+      [`games/${code}/currentQIndex`]: 0,
+      [`games/${code}/currentQ`]: null,
+      [`games/${code}/currentGenre`]: null,
+      [`games/${code}/wrongAnswerers`]: [],
+      [`games/${code}/playerWrongAnswers`]: {},
+      [`games/${code}/buzzer`]: null,
+      [`games/${code}/answerRevealed`]: false,
+      [`games/${code}/questionRevealed`]: false,
+      [`games/${code}/submissions`]: {},
+      [`games/${code}/votes`]: {},
+      [`games/${code}/votePhase`]: null,
+      [`games/${code}/powerupRound`]: {},
+      [`games/${code}/usedGenres`]: [],
+      [`games/${code}/roundVotes`]: {},
+      [`games/${code}/jokePhase`]: null,
+      [`games/${code}/jokeSubmissions`]: {},
+      [`games/${code}/jokeVotes`]: {},
+      [`games/${code}/htPhase`]: null,
+      [`games/${code}/htVotes`]: {},
+      [`games/${code}/whodPhase`]: null,
+      [`games/${code}/whodAnswers`]: {},
+      [`games/${code}/whodVotes`]: {},
+    })
+  }, [])
+
+  // ── Trigger Redemption Arc ────────────────────────────────────────────────────
+  const triggerRedemptionArc = useCallback(async (code, game) => {
+    // Collect all wrong questions from all players (deduped)
+    const allWrong = []
+    const seen = new Set()
+    Object.values(game?.playerWrongAnswers || {}).forEach(qs => {
+      ;(qs || []).forEach(q => {
+        if (!seen.has(q.q)) { seen.add(q.q); allWrong.push(q) }
+      })
+    })
+    if (allWrong.length === 0) {
+      await update(ref(db, `games/${code}`), { state: 'final' })
+      return false
+    }
+    await update(ref(db, `games/${code}`), {
+      state: 'quiz',
+      currentGenre: { id: 'redemption', name: 'Redemption Arc', emoji: '⚡', gameType: 'redemption', color: '#f4d03f' },
+      currentQIndex: 0,
+      currentQ: null,
+      wrongAnswerers: [],
+      buzzer: null,
+      answerRevealed: false,
+      redemptionQuestions: allWrong,
+    })
+    return true
+  }, [])
+
+  // ── Joke Off helpers ──────────────────────────────────────────────────────────
+  const startJokePrompt = useCallback(async (code, prompt) => {
+    await update(ref(db, `games/${code}`), {
+      jokePhase: 'submit',
+      jokePrompt: prompt,
+      jokeSubmissions: {},
+      jokeVotes: {},
+      jokePromptStartAt: Date.now(),
+    })
+  }, [])
+
+  const submitJoke = useCallback(async (code, playerId, text) => {
+    await update(ref(db, `games/${code}/jokeSubmissions`), { [playerId]: text.trim() })
+  }, [])
+
+  const startJokeVoting = useCallback(async (code) => {
+    await update(ref(db, `games/${code}`), { jokePhase: 'vote' })
+  }, [])
+
+  const voteJoke = useCallback(async (code, voterId, targetId) => {
+    await update(ref(db, `games/${code}/jokeVotes`), { [voterId]: targetId })
+  }, [])
+
+  const revealJokeResults = useCallback(async (code, game) => {
+    const votes = game.jokeVotes || {}
+    const updates = {}
+    // Tally votes per player
+    const tally = {}
+    Object.values(votes).forEach(targetId => { tally[targetId] = (tally[targetId] || 0) + 1 })
+    const maxVotes = Math.max(...Object.values(tally), 0)
+    // Award points: 100 per vote, +100 bonus for most votes
+    Object.entries(tally).forEach(([pid, count]) => {
+      const p = game.players?.[pid]
+      if (!p) return
+      const bonus = count === maxVotes && count > 0 ? 100 : 0
+      const pts = count * 100 + bonus
+      updates[`games/${code}/players/${pid}/score`] = (p.score || 0) + pts
+      updates[`games/${code}/players/${pid}/roundScore`] = (p.roundScore || 0) + pts
+    })
+    updates[`games/${code}/jokePhase`] = 'results'
+    await update(ref(db), updates)
+    return tally
+  }, [])
+
+  const nextJokePrompt = useCallback(async (code, game) => {
+    const genreData = getGenreById(game.currentGenre?.id)
+    const prompts = genreData?.prompts || []
+    const used = game.jokePromptsUsed || []
+    const remaining = prompts.filter(p => !used.includes(p))
+    if (remaining.length === 0) {
+      await update(ref(db, `games/${code}`), { state: 'round-over' })
+    } else {
+      const next = remaining[Math.floor(Math.random() * remaining.length)]
+      await update(ref(db, `games/${code}`), {
+        jokePhase: 'submit',
+        jokePrompt: next,
+        jokeSubmissions: {},
+        jokeVotes: {},
+        jokePromptsUsed: [...used, next],
+        jokePromptStartAt: Date.now(),
+      })
+    }
+  }, [])
+
+  const endJokeRound = useCallback(async (code) => {
+    await update(ref(db, `games/${code}`), { state: 'round-over' })
+  }, [])
+
+  // ── Hot Take helpers ──────────────────────────────────────────────────────────
+  const startHotTakePrompt = useCallback(async (code, prompt) => {
+    await update(ref(db, `games/${code}`), {
+      htPhase: 'vote',
+      htPrompt: prompt,
+      htVotes: {},
+      htStartAt: Date.now(),
+    })
+  }, [])
+
+  const submitHotTakeVote = useCallback(async (code, playerId, vote) => {
+    // vote: 'agree' | 'disagree'
+    await update(ref(db, `games/${code}/htVotes`), { [playerId]: vote })
+  }, [])
+
+  const revealHotTakeResults = useCallback(async (code, game) => {
+    const votes = game.htVotes || {}
+    const players = Object.values(game.players || {}).filter(p => p.role !== 'gamescreen')
+    const agrees = Object.values(votes).filter(v => v === 'agree').length
+    const disagrees = Object.values(votes).filter(v => v === 'disagree').length
+    const majority = agrees >= disagrees ? 'agree' : 'disagree'
+    // Points: 75 to everyone in majority. Bonus 50 if unanimous
+    const updates = {}
+    const isUnanimous = agrees === 0 || disagrees === 0
+    players.forEach(p => {
+      if (votes[p.id] === majority) {
+        const pts = 75 + (isUnanimous ? 50 : 0)
+        updates[`games/${code}/players/${p.id}/score`] = (p.score || 0) + pts
+        updates[`games/${code}/players/${p.id}/roundScore`] = (p.roundScore || 0) + pts
+      }
+    })
+    updates[`games/${code}/htPhase`] = 'results'
+    await update(ref(db), updates)
+    return { majority, agrees, disagrees, isUnanimous }
+  }, [])
+
+  const nextHotTakePrompt = useCallback(async (code, game) => {
+    const genreData = getGenreById(game.currentGenre?.id)
+    const prompts = genreData?.prompts || []
+    const used = game.htPromptsUsed || []
+    const remaining = prompts.filter(p => !used.includes(p))
+    const roundLimit = game.settings?.questionsPerRound || 6
+    const count = (game.htPromptCount || 0) + 1
+    if (remaining.length === 0 || count >= roundLimit) {
+      await update(ref(db, `games/${code}`), { state: 'round-over' })
+    } else {
+      const next = remaining[Math.floor(Math.random() * remaining.length)]
+      await update(ref(db, `games/${code}`), {
+        htPhase: 'vote',
+        htPrompt: next,
+        htVotes: {},
+        htPromptsUsed: [...used, next],
+        htPromptCount: count,
+        htStartAt: Date.now(),
+      })
+    }
+  }, [])
+
+  const endHotTakeRound = useCallback(async (code) => {
+    await update(ref(db, `games/${code}`), { state: 'round-over' })
+  }, [])
+
+  // ── Whodunnit helpers ──────────────────────────────────────────────────────────
+  const startWhodunnit = useCallback(async (code, game) => {
+    const players = Object.values(game.players || {}).filter(p => p.role !== 'gamescreen')
+    if (players.length < 2) return
+    const imposterId = players[Math.floor(Math.random() * players.length)].id
+    const genreData = getGenreById(game.currentGenre?.id)
+    const pairs = genreData?.pairs || []
+    const pair = pairs[Math.floor(Math.random() * pairs.length)] || { normal: 'What is your favourite film?', imposter: 'What is your favourite TV show?' }
+    await update(ref(db, `games/${code}`), {
+      whodPhase: 'answer',
+      whodImposterId: imposterId,
+      whodPrompt: pair.normal,
+      whodImposterPrompt: pair.imposter,
+      whodAnswers: {},
+      whodVotes: {},
+      whodStartAt: Date.now(),
+    })
+  }, [])
+
+  const submitWhodAnswer = useCallback(async (code, playerId, answer) => {
+    await update(ref(db, `games/${code}/whodAnswers`), { [playerId]: answer.trim() })
+  }, [])
+
+  const startWhodVoting = useCallback(async (code) => {
+    await update(ref(db, `games/${code}`), { whodPhase: 'vote' })
+  }, [])
+
+  const submitWhodVote = useCallback(async (code, voterId, targetId) => {
+    await update(ref(db, `games/${code}/whodVotes`), { [voterId]: targetId })
+  }, [])
+
+  const revealWhodResults = useCallback(async (code, game) => {
+    const imposterId = game.whodImposterId
+    const votes = game.whodVotes || {}
+    const players = Object.values(game.players || {}).filter(p => p.role !== 'gamescreen')
+    // Count votes against imposter
+    const votesOnImposter = Object.values(votes).filter(v => v === imposterId).length
+    const majority = votesOnImposter > (players.length - 1) / 2
+    const updates = {}
+    if (majority) {
+      // Imposter caught — non-imposters get points for correct votes
+      players.forEach(p => {
+        if (p.id !== imposterId && votes[p.id] === imposterId) {
+          const pts = 150
+          updates[`games/${code}/players/${p.id}/score`] = (p.score || 0) + pts
+          updates[`games/${code}/players/${p.id}/roundScore`] = (p.roundScore || 0) + pts
+        }
+      })
+    } else {
+      // Imposter escaped — they get 200 points
+      const imp = game.players?.[imposterId]
+      if (imp) {
+        updates[`games/${code}/players/${imposterId}/score`] = (imp.score || 0) + 200
+        updates[`games/${code}/players/${imposterId}/roundScore`] = (imp.roundScore || 0) + 200
+      }
+    }
+    updates[`games/${code}/whodPhase`] = 'results'
+    updates[`games/${code}/whodCaught`] = majority
+    await update(ref(db), updates)
+    return majority
+  }, [])
+
+  const endWhodRound = useCallback(async (code) => {
+    await update(ref(db, `games/${code}`), { state: 'round-over' })
+  }, [])
+
+  // ── Outlandish Lawyers ───────────────────────────────────────────────────────
+  // Phases: 'defence1' → 'prosecution1' → 'defence2' → 'prosecution2' → 'vote' → 'results'
+  // Two random players debate an absurd statement. Audience votes on who was more convincing.
+  // Points: debater gets Math.round(voteShare * 15) * 10 pts (0–150, multiples of 10).
+  // Audience: +50 if they voted for the majority side.
+
+  const startLawyers = useCallback(async (code, game) => {
+    const genre = getGenreById('outlandishlawyers')
+    const statements = genre?.statements || ['The floor is a very low ceiling']
+
+    const participants = Object.values(game?.players || {}).filter(p => p.role !== 'gamescreen')
+    if (participants.length < 2) return false
+
+    // Pick 2 random players as debaters
+    const shuffled = [...participants].sort(() => Math.random() - 0.5)
+    const defender = shuffled[0]
+    const prosecutor = shuffled[1]
+
+    // Pick a random statement
+    const statement = statements[Math.floor(Math.random() * statements.length)]
+
+    const currentGenre = { id: 'outlandishlawyers', name: 'Outlandish Lawyers', emoji: '⚖️', gameType: 'lawyers', color: '#c084fc' }
+
+    await update(ref(db, `games/${code}`), {
+      state: 'lawyers',
+      currentGenre,
+      lawyersPhase: 'intro',
+      lawyersDefenderId: defender.id,
+      lawyersProsecutorId: prosecutor.id,
+      lawyersStatement: statement,
+      lawyersPhaseStart: Date.now(),
+      lawyersVotes: {},
+      lawyersPoints: null,
+    })
+    return true
+  }, [])
+
+  const advanceLawyersPhase = useCallback(async (code, currentPhase) => {
+    const order = ['intro', 'defence1', 'prosecution1', 'defence2', 'prosecution2', 'vote', 'results']
+    const idx = order.indexOf(currentPhase)
+    const nextPhase = order[idx + 1] || 'results'
+    await update(ref(db, `games/${code}`), {
+      lawyersPhase: nextPhase,
+      lawyersPhaseStart: Date.now(),
+    })
+    return nextPhase
+  }, [])
+
+  const submitLawyersVote = useCallback(async (code, myId, side) => {
+    // side: 'defence' | 'prosecution'
+    await update(ref(db), {
+      [`games/${code}/lawyersVotes/${myId}`]: side,
+    })
+  }, [])
+
+  const revealLawyersResults = useCallback(async (code, game) => {
+    const votes = game?.lawyersVotes || {}
+    const defenderId = game?.lawyersDefenderId
+    const prosecutorId = game?.lawyersProsecutorId
+    const voteValues = Object.values(votes)
+    const total = voteValues.length
+    if (total === 0) {
+      // No votes — award nothing, just move on
+      await update(ref(db, `games/${code}`), {
+        lawyersPhase: 'results',
+        lawyersPoints: { defence: 0, prosecution: 0 },
+      })
+      return
+    }
+
+    const defCount = voteValues.filter(v => v === 'defence').length
+    const prosCount = total - defCount
+    const defPts = Math.round((defCount / total) * 15) * 10
+    const prosPts = 150 - defPts
+
+    const playerUpdates = {}
+    // Award debater points
+    if (defenderId) {
+      const d = game?.players?.[defenderId]
+      if (d) {
+        playerUpdates[`games/${code}/players/${defenderId}/score`] = (d.score || 0) + defPts
+        playerUpdates[`games/${code}/players/${defenderId}/roundScore`] = (d.roundScore || 0) + defPts
+      }
+    }
+    if (prosecutorId) {
+      const p = game?.players?.[prosecutorId]
+      if (p) {
+        playerUpdates[`games/${code}/players/${prosecutorId}/score`] = (p.score || 0) + prosPts
+        playerUpdates[`games/${code}/players/${prosecutorId}/roundScore`] = (p.roundScore || 0) + prosPts
+      }
+    }
+    // Award audience: +50 for voting with the majority
+    const majoritySide = defCount >= prosCount ? 'defence' : 'prosecution'
+    Object.entries(votes).forEach(([pid, side]) => {
+      if (pid === defenderId || pid === prosecutorId) return // debaters don't vote
+      if (side === majoritySide) {
+        const p = game?.players?.[pid]
+        if (p) {
+          playerUpdates[`games/${code}/players/${pid}/score`] = (p.score || 0) + 50
+          playerUpdates[`games/${code}/players/${pid}/roundScore`] = (p.roundScore || 0) + 50
+        }
+      }
+    })
+
+    await update(ref(db), {
+      ...playerUpdates,
+      [`games/${code}/lawyersPhase`]: 'results',
+      [`games/${code}/lawyersPoints`]: { defence: defPts, prosecution: prosPts, defCount, prosCount, majority: majoritySide },
+    })
+  }, [])
+
+  const endLawyersRound = useCallback(async (code) => {
+    await update(ref(db, `games/${code}`), { state: 'round-over' })
+  }, [])
+
+  // ── Fill the Gap helpers ──────────────────────────────────────────────────────
+  const startFillGap = useCallback(async (code, game) => {
+    const genreData = getGenreById(game.currentGenre?.id)
+    const prompts = genreData?.prompts || []
+    const used = game.fgPromptsUsed || []
+    const remaining = prompts.filter(p => !used.includes(p))
+    if (remaining.length === 0) {
+      await update(ref(db, `games/${code}`), { state: 'round-over' }); return
+    }
+    const prompt = remaining[Math.floor(Math.random() * remaining.length)]
+    await update(ref(db, `games/${code}`), {
+      fgPhase: 'input',
+      fgPrompt: prompt,
+      fgSubmissions: {},
+      fgVotes: {},
+      fgStartAt: Date.now(),
+      fgPromptsUsed: [...used, prompt],
+      fgPromptCount: (game.fgPromptCount || 0) + 1,
+    })
+  }, [])
+
+  const submitFillAnswer = useCallback(async (code, playerId, text) => {
+    await update(ref(db, `games/${code}/fgSubmissions`), { [playerId]: text.trim() })
+  }, [])
+
+  const startFillVoting = useCallback(async (code) => {
+    await update(ref(db, `games/${code}`), { fgPhase: 'vote' })
+  }, [])
+
+  const voteFillAnswer = useCallback(async (code, voterId, targetId) => {
+    await update(ref(db, `games/${code}/fgVotes`), { [voterId]: targetId })
+  }, [])
+
+  const revealFillResults = useCallback(async (code, game) => {
+    const votes = game.fgVotes || {}
+    const submissions = game.fgSubmissions || {}
+    const players = Object.values(game.players || {}).filter(p => p.role !== 'gamescreen')
+    const updates = {}
+    // Participation points for everyone who submitted
+    players.forEach(p => {
+      if (submissions[p.id]) {
+        const pts = 25
+        updates[`games/${code}/players/${p.id}/score`] = (p.score || 0) + pts
+        updates[`games/${code}/players/${p.id}/roundScore`] = (p.roundScore || 0) + pts
+      }
+    })
+    // Vote points: 75 per vote received
+    const tally = {}
+    Object.values(votes).forEach(targetId => { tally[targetId] = (tally[targetId] || 0) + 1 })
+    const maxVotes = Math.max(...Object.values(tally), 0)
+    Object.entries(tally).forEach(([pid, count]) => {
+      const p = game.players?.[pid]
+      if (!p) return
+      const bonus = count === maxVotes && count > 0 ? 100 : 0
+      const pts = count * 75 + bonus
+      // Add to existing (participation already added above)
+      const current = (p.score || 0) + 25 // participation already in updates
+      updates[`games/${code}/players/${pid}/score`] = current + pts
+      updates[`games/${code}/players/${pid}/roundScore`] = ((p.roundScore || 0) + 25) + pts
+    })
+    updates[`games/${code}/fgPhase`] = 'results'
+    await update(ref(db), updates)
+    return tally
+  }, [])
+
+  const endFillRound = useCallback(async (code) => {
+    await update(ref(db, `games/${code}`), { state: 'round-over' })
+  }, [])
+
+  // ── Pause request helpers ─────────────────────────────────────────────────────
+  const requestPause = useCallback(async (code, playerId) => {
+    await update(ref(db, `games/${code}/pauseRequests`), { [playerId]: true })
+  }, [])
+
+  const cancelPauseRequest = useCallback(async (code, playerId) => {
+    await update(ref(db, `games/${code}/pauseRequests`), { [playerId]: null })
+  }, [])
+
+  const unpauseGame = useCallback(async (code) => {
+    await update(ref(db, `games/${code}`), { gamePaused: false, pauseRequests: {} })
+  }, [])
+
   return {
     createGame, joinGame, subscribeToGame, updateGame, updatePlayer,
     dealGenres, voteForGenre, selectGenre,
@@ -433,5 +985,13 @@ export function useGame() {
     submitInsideJoke, activatePowerupRound, usePowerup,
     blockPlayer, setPlagiarismTarget, submitVote, submitCreative,
     assignScreenRole, useSecondLife, forceAnswer,
+    transferHost, stealPowerup, saveDrawing, submitDrawGuess, advanceDrawRound,
+    returnToLobby, triggerRedemptionArc,
+    startJokePrompt, submitJoke, startJokeVoting, voteJoke, revealJokeResults, nextJokePrompt, endJokeRound,
+    startHotTakePrompt, submitHotTakeVote, revealHotTakeResults, nextHotTakePrompt, endHotTakeRound,
+    startWhodunnit, submitWhodAnswer, startWhodVoting, submitWhodVote, revealWhodResults, endWhodRound,
+    startLawyers, advanceLawyersPhase, submitLawyersVote, revealLawyersResults, endLawyersRound,
+    startFillGap, submitFillAnswer, startFillVoting, voteFillAnswer, revealFillResults, endFillRound,
+    requestPause, cancelPauseRequest, unpauseGame,
   }
 }

@@ -12,13 +12,23 @@ export const PLAYER_COLORS = [
 
 // GAME TYPES
 export const GAME_TYPES = {
-  quiz:    { id: 'quiz',    label: 'Quiz',          icon: '❓', desc: 'Buzz in and answer' },
-  draw:    { id: 'draw',    label: 'Draw It',       icon: '🎨', desc: 'Draw the prompt, group votes' },
-  joke:    { id: 'joke',    label: 'Joke Off',      icon: '😂', desc: 'Funniest answer wins the vote' },
-  hottake: { id: 'hottake', label: 'Hot Take',      icon: '🔥', desc: 'Agree or disagree — crowd decides' },
-  fill:    { id: 'fill',    label: 'Fill the Gap',  icon: '✏️',  desc: 'Complete the sentence' },
-  blitz:   { id: 'blitz',   label: 'Trivia Blitz',  icon: '⚡',  desc: 'Fastest correct answer wins' },
-  whod:    { id: 'whod',    label: 'Whodunnit',     icon: '🕵️',  desc: 'One player has a different prompt' },
+  quiz:       { id: 'quiz',       label: 'Quiz',            icon: '❓', desc: 'Buzz in and answer' },
+  draw:       { id: 'draw',       label: 'Draw It',         icon: '🎨', desc: 'Draw the prompt, group votes' },
+  joke:       { id: 'joke',       label: 'Joke Off',        icon: '😂', desc: 'Funniest punchline wins the vote (Quiplash-style)' },
+  hottake:    { id: 'hottake',    label: 'Hot Take',        icon: '🔥', desc: 'Agree or disagree — crowd decides who\'s right' },
+  fill:       { id: 'fill',       label: 'Fill the Gap',    icon: '✏️',  desc: 'Complete the sentence creatively' },
+  blitz:      { id: 'blitz',      label: 'Trivia Blitz',    icon: '⚡',  desc: 'Fastest correct answer wins' },
+  whod:       { id: 'whod',       label: 'Whodunnit',       icon: '🕵️',  desc: 'One player answers a different question — find the imposter' },
+  music:      { id: 'music',      label: 'Music Bangers',   icon: '🎵',  desc: 'Hear the clip, buzz to name the song' },
+  redemption: { id: 'redemption', label: 'Redemption Arc',  icon: '⚡',  desc: 'Second chance on questions you got wrong — 1.25× points' },
+  lawyers:    { id: 'lawyers',    label: 'Outlandish Lawyers', icon: '⚖️',  desc: 'Debate an absurd statement — audience votes who was most convincing' },
+  // ── Planned / coming soon ──────────────────────────────────────────────────────
+  // pitch:     Sell the most ridiculous product using a random word combo (Jackbox: Patently Stupid)
+  // twotruth:  Two Truths & A Lie — everyone submits 3 statements, group guesses the lie
+  // rankit:    Rank 5 items in order — points for matching the group consensus (Surveyverse)
+  // timeline:  Put historical events in chronological order — fastest + most accurate wins
+  // emojistory:Describe a film/song/show using only emojis — group guesses
+  // mimeit:    Caption a meme or screenshot — group votes for funniest (Drawful-adjacent)
 }
 
 // INSIDE JOKE CATEGORIES
@@ -620,7 +630,130 @@ export const CREATIVE_GENRES = [
     gameType: 'blitz',
     color: '#a855f7',
     category: 'creative',
-    prompts: [], // Uses quiz questions but rapid fire
+    prompts: [],
+    questions: [
+      { q: 'What is the capital of France?', a: 'Paris', hint: 'City of Lights' },
+      { q: 'How many sides does a hexagon have?', a: 'Six', hint: 'hex = 6' },
+      { q: 'What is H₂O?', a: 'Water', hint: 'Two hydrogens, one oxygen' },
+      { q: "Who wrote Romeo and Juliet?", a: 'Shakespeare', hint: 'William ___' },
+      { q: 'What colour is a sunflower?', a: 'Yellow', hint: 'Bright warm colour' },
+      { q: 'How many days in a leap year?', a: '366', hint: 'One extra day in February' },
+      { q: 'What planet is closest to the Sun?', a: 'Mercury', hint: 'Fastest orbit' },
+      { q: 'What is 7 × 8?', a: '56', hint: 'Tricky one from times tables' },
+      { q: 'Which ocean is the largest?', a: 'Pacific', hint: 'Covers more than half the world' },
+      { q: 'What gas do plants absorb?', a: 'Carbon dioxide', hint: 'CO₂' },
+      { q: 'How many letters in the alphabet?', a: '26', hint: 'A to Z' },
+      { q: 'What country is the Eiffel Tower in?', a: 'France', hint: 'Where Paris is' },
+      { q: 'How many minutes in an hour?', a: '60', hint: 'Basic time unit' },
+      { q: 'What animal is the symbol of Australia?', a: 'Kangaroo', hint: 'Pouched marsupial' },
+      { q: 'What is the fastest land animal?', a: 'Cheetah', hint: '70mph top speed' },
+      { q: 'How many bones in the human body?', a: '206', hint: 'Give or take' },
+      { q: 'Which planet has rings?', a: 'Saturn', hint: 'Also Jupiter, Uranus & Neptune but Saturn is famous' },
+      { q: 'What is the square root of 144?', a: '12', hint: '12 × 12' },
+      { q: 'Who painted the Mona Lisa?', a: 'Leonardo da Vinci', hint: 'Italian Renaissance master' },
+      { q: 'What is the chemical symbol for gold?', a: 'Au', hint: 'Latin: Aurum' },
+      { q: 'How many continents are there?', a: 'Seven', hint: 'Africa, Asia, Europe...' },
+      { q: 'What currency does Japan use?', a: 'Yen', hint: '¥ symbol' },
+      { q: "What is Batman's real name?", a: 'Bruce Wayne', hint: 'Billionaire in Gotham' },
+      { q: 'How many players in a football team?', a: '11', hint: 'On the pitch at once' },
+      { q: 'What language does Brazil speak?', a: 'Portuguese', hint: 'Not Spanish!' },
+      { q: 'What year did WW2 end?', a: '1945', hint: 'VE Day and VJ Day' },
+      { q: 'What is the powerhouse of the cell?', a: 'Mitochondria', hint: 'Biology class classic' },
+      { q: 'Who invented the telephone?', a: 'Alexander Graham Bell', hint: 'Scottish-born inventor' },
+      { q: 'What is the hardest natural substance?', a: 'Diamond', hint: '10 on the Mohs scale' },
+      { q: 'How many zeros in a million?', a: 'Six', hint: '1,000,000' },
+    ],
+  },
+  // ─── Music Bangers ─────────────────────────────────────────────────────────
+  // clipUrl: short audio clip URL played to all players.
+  // Host controls playback. Players buzz to name the song + artist.
+  // Add real clip URLs here — keep clips under 15 seconds.
+  // Free sources: freemusicarchive.org, soundcloud free tracks, short previews.
+  {
+    id: 'musicbangers',
+    name: 'Music Bangers',
+    emoji: '🎵',
+    gameType: 'music',
+    color: '#f72585',
+    category: 'creative',
+    questions: [
+      // Format: { q: display label, a: "Song - Artist", hint: 'Year/hint', clipUrl: 'url to mp3' }
+      // ⚠️  Add real clip URLs below — these are placeholders Ethan needs to fill in.
+      { q: 'Name this tune 🎵', a: 'Bohemian Rhapsody - Queen',         hint: '1975',     clipUrl: '' },
+      { q: 'Name this tune 🎵', a: 'Smells Like Teen Spirit - Nirvana', hint: '1991',     clipUrl: '' },
+      { q: 'Name this tune 🎵', a: 'Blinding Lights - The Weeknd',      hint: '2019',     clipUrl: '' },
+      { q: 'Name this tune 🎵', a: 'Rolling in the Deep - Adele',       hint: '2010',     clipUrl: '' },
+      { q: 'Name this tune 🎵', a: 'Mr Brightside - The Killers',       hint: '2003',     clipUrl: '' },
+      { q: 'Name this tune 🎵', a: 'Angels - Robbie Williams',          hint: '1997',     clipUrl: '' },
+      { q: 'Name this tune 🎵', a: 'Shape of You - Ed Sheeran',         hint: '2017',     clipUrl: '' },
+      { q: 'Name this tune 🎵', a: 'Africa - Toto',                     hint: '1982',     clipUrl: '' },
+      { q: 'Name this tune 🎵', a: 'Uptown Funk - Bruno Mars',          hint: '2014',     clipUrl: '' },
+      { q: 'Name this tune 🎵', a: 'Sandstorm - Darude',                hint: '1999',     clipUrl: '' },
+      { q: 'Name this tune ����', a: 'Don\'t Stop Believin\' - Journey',  hint: '1981',     clipUrl: '' },
+      { q: 'Name this tune 🎵', a: 'Waterloo - ABBA',                   hint: '1974',     clipUrl: '' },
+      { q: 'Name this tune 🎵', a: 'Sweet Child O\' Mine - Guns N\' Roses', hint: '1987', clipUrl: '' },
+      { q: 'Name this tune 🎵', a: 'Toxic - Britney Spears',            hint: '2004',     clipUrl: '' },
+      { q: 'Name this tune 🎵', a: 'Get Lucky - Daft Punk',             hint: '2013',     clipUrl: '' },
+    ],
+  },
+  // ─── Whodunnit ──────────────────────────────────────────────────────────────
+  // Each question: one player gets `normal`, secretly one gets `imposter`.
+  // Players share answers — group must vote on who gave a different answer.
+  {
+    id: 'whodunnit',
+    name: 'Whodunnit',
+    emoji: '🕵️',
+    gameType: 'whod',
+    color: '#4895ef',
+    category: 'creative',
+    pairs: [
+      { normal: "What's your favourite pizza topping?",      imposter: "What's your favourite pasta sauce?" },
+      { normal: "What's your favourite film genre?",         imposter: "What's your favourite book genre?" },
+      { normal: "Name a country you'd love to visit",        imposter: "Name a country you'd never want to visit" },
+      { normal: "What's your go-to takeaway order?",         imposter: "What's your dream home-cooked meal?" },
+      { normal: "Name an animal you'd like as a pet",        imposter: "Name an animal you're afraid of" },
+      { normal: "What's your favourite season?",             imposter: "What's your least favourite season?" },
+      { normal: "What's your favourite type of music?",      imposter: "What's your most-listened-to song this year?" },
+      { normal: "What would your superpower be?",            imposter: "What would your supervillain power be?" },
+      { normal: "Name a celebrity you'd invite to dinner",   imposter: "Name a celebrity who annoys you" },
+      { normal: "What's the best decade for fashion?",       imposter: "What's the worst decade for fashion?" },
+      { normal: "Name something you do first thing in the morning", imposter: "Name something you do last thing at night" },
+      { normal: "What job would you hate to do?",            imposter: "What job would you secretly love to try?" },
+    ],
+  },
+  // ─── Outlandish Lawyers ────────────────────────────────────────────────────
+  // Two random players are assigned Defence and Prosecution.
+  // They debate the statement: 4 × 30s rounds → audience vote → points.
+  // Points: vote% × 150 for each debater; audience +50 if they backed the winner.
+  {
+    id: 'outlandishlawyers',
+    name: 'Outlandish Lawyers',
+    emoji: '⚖️',
+    gameType: 'lawyers',
+    color: '#c084fc',
+    category: 'creative',
+    statements: [
+      "Bread is best served in toilet water",
+      "Sleeping in is technically a form of self-defence",
+      "Monday should be renamed Pre-Tuesday",
+      "Pigeons are government surveillance drones",
+      "The floor is actually a very low ceiling",
+      "Cheese is just milk doing a push-up",
+      "Trains are just really long buses with commitment issues",
+      "Clouds are actually just sky furniture",
+      "Breakfast cereal is just a soup we haven't admitted to yet",
+      "Libraries are just book hotels",
+      "Escalators are stairs that gave up",
+      "A sandwich is just a salad that sorted itself out",
+      "Dogs are just wolves who went to therapy",
+      "Pockets are just indoor bags",
+      "Buttons exist to punish people who are in a hurry",
+      "The alphabet is just numbers for people who can't do maths",
+      "Sunglasses are just portable curtains for your face",
+      "Every map is technically just a flat lie about the Earth",
+      "Soup is just hot water trying its best",
+      "Furniture is just buildings for objects",
+    ],
   },
 ]
 

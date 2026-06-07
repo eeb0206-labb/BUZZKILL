@@ -191,44 +191,52 @@ function setBgVolume(vol, rampTime = 0.3) {
 
 // ─── exported hook ────────────────────────────────────────────────────────────
 export function useSound() {
-  const muted = useStore(s => s.muted)
+  const muted      = useStore(s => s.muted)
+  const sfxVol     = useStore(s => s.sfxVolume)
+  const musicVol   = useStore(s => s.musicVolume)
+  const sfxOn      = useStore(s => s.sfxEnabled)
+  const musicOn    = useStore(s => s.musicEnabled)
 
-  const vol = useCallback((v) => muted ? 0 : v, [muted])
+  // SFX volume helper — applies user volume + mute + sfx toggle
+  const vol = useCallback((v) => (muted || !sfxOn) ? 0 : v * sfxVol, [muted, sfxOn, sfxVol])
+
+  // Music base volume (scaled down so 1.0 = comfortable background level)
+  const baseMusicVol = () => (muted || !musicOn) ? 0 : musicVol * 0.08
 
   const playCorrect = useCallback(() => {
-    if (muted) return
-    [0, 0.1, 0.2].forEach((d, i) => playTone([523, 659, 784][i], 'triangle', 0.15, 0.3, d))
-  }, [muted])
+    if (muted || !sfxOn) return
+    ;[0, 0.1, 0.2].forEach((d, i) => playTone([523, 659, 784][i], 'triangle', 0.15, 0.3 * sfxVol, d))
+  }, [muted, sfxOn, sfxVol])
 
   const playWrong = useCallback(() => {
-    if (muted) return
-    [0, 0.12, 0.24].forEach((d, i) => playTone([220, 196, 174][i], 'sawtooth', 0.1, 0.3, d))
-  }, [muted])
+    if (muted || !sfxOn) return
+    ;[0, 0.12, 0.24].forEach((d, i) => playTone([220, 196, 174][i], 'sawtooth', 0.1, 0.3 * sfxVol, d))
+  }, [muted, sfxOn, sfxVol])
 
   const playBuzz = useCallback((colorId = 'blue') => {
-    if (muted) return
+    if (muted || !sfxOn) return
     const fn = COLOR_SOUNDS[colorId] || COLOR_SOUNDS.blue
     fn()
-  }, [muted])
+  }, [muted, sfxOn])
 
   const playFartSound = useCallback(() => {
-    if (muted) return
+    if (muted || !sfxOn) return
     playFart()
-  }, [muted])
+  }, [muted, sfxOn])
 
   const playTick = useCallback((urgent = false) => {
-    if (muted) return
-    playTone(urgent ? 1200 : 800, 'square', 0.03, urgent ? 0.15 : 0.05)
-  }, [muted])
+    if (muted || !sfxOn) return
+    playTone(urgent ? 1200 : 800, 'square', 0.03, (urgent ? 0.15 : 0.05) * sfxVol)
+  }, [muted, sfxOn, sfxVol])
 
   const playSecondLife = useCallback(() => {
-    if (muted) return
-    [0, 0.06, 0.12, 0.18, 0.24].forEach((d, i) =>
-      playTone([523, 659, 784, 880, 1047][i], 'sine', 0.12, 0.2, d))
-  }, [muted])
+    if (muted || !sfxOn) return
+    ;[0, 0.06, 0.12, 0.18, 0.24].forEach((d, i) =>
+      playTone([523, 659, 784, 880, 1047][i], 'sine', 0.12, 0.2 * sfxVol, d))
+  }, [muted, sfxOn, sfxVol])
 
   const playPowerupActivate = useCallback(() => {
-    if (muted) return
+    if (muted || !sfxOn) return
     const ac = getCtx()
     const osc = ac.createOscillator()
     const gain = ac.createGain()
@@ -236,67 +244,68 @@ export function useSound() {
     osc.type = 'sawtooth'
     osc.frequency.setValueAtTime(110, ac.currentTime)
     osc.frequency.exponentialRampToValueAtTime(880, ac.currentTime + 0.4)
-    gain.gain.setValueAtTime(0.3, ac.currentTime)
+    gain.gain.setValueAtTime(0.3 * sfxVol, ac.currentTime)
     gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.4)
     osc.start(ac.currentTime); osc.stop(ac.currentTime + 0.45)
-    setTimeout(() => playChord([523, 659, 784, 1047], 'triangle', 0.3, 0.15), 420)
-  }, [muted])
+    setTimeout(() => playChord([523, 659, 784, 1047], 'triangle', 0.3, 0.15 * sfxVol), 420)
+  }, [muted, sfxOn, sfxVol])
 
   const playPowerupDeactivate = useCallback(() => {
-    if (muted) return
-    ;[0, 0.07, 0.14].forEach((d, i) => playTone([523, 440, 392][i], 'sine', 0.08, 0.2, d))
-  }, [muted])
+    if (muted || !sfxOn) return
+    ;[0, 0.07, 0.14].forEach((d, i) => playTone([523, 440, 392][i], 'sine', 0.08, 0.2 * sfxVol, d))
+  }, [muted, sfxOn, sfxVol])
 
   const playRoundOver = useCallback(() => {
-    if (muted) return
-    // Fanfare
+    if (muted || !sfxOn) return
     const notes = [523, 659, 784, 1047]
-    notes.forEach((f, i) => playTone(f, 'sawtooth', 0.25, 0.3, i * 0.12))
-  }, [muted])
+    notes.forEach((f, i) => playTone(f, 'sawtooth', 0.25, 0.3 * sfxVol, i * 0.12))
+  }, [muted, sfxOn, sfxVol])
 
   const playSkip = useCallback(() => {
-    if (muted) return
-    ;[0, 0.07, 0.14].forEach((d, i) => playTone([440, 392, 330][i], 'square', 0.06, 0.2, d))
-  }, [muted])
+    if (muted || !sfxOn) return
+    ;[0, 0.07, 0.14].forEach((d, i) => playTone([440, 392, 330][i], 'square', 0.06, 0.2 * sfxVol, d))
+  }, [muted, sfxOn, sfxVol])
 
   const playVictory = useCallback(() => {
-    if (muted) return
+    if (muted || !sfxOn) return
     const melody = [523, 523, 523, 415, 523, 0, 784, 0, 740, 698, 659, 622, 659]
     melody.forEach((f, i) => {
-      if (f > 0) playTone(f, 'sawtooth', 0.2, 0.3, i * 0.15)
+      if (f > 0) playTone(f, 'sawtooth', 0.2, 0.3 * sfxVol, i * 0.15)
     })
-  }, [muted])
+  }, [muted, sfxOn, sfxVol])
 
-  const startMusic = useCallback((volume = 0.3) => {
-    if (muted) return
-    startBgMusic(volume)
-  }, [muted])
+  const startMusic = useCallback(() => {
+    const v = baseMusicVol()
+    if (v <= 0) return
+    startBgMusic(v)
+  }, [muted, musicOn, musicVol])
 
   const stopMusic = useCallback(() => {
     stopBgMusic()
   }, [])
 
   const dimMusic = useCallback(() => {
-    setBgVolume(0.02, 0.1)
-  }, [])
+    setBgVolume(baseMusicVol() * 0.25, 0.1)
+  }, [muted, musicOn, musicVol])
 
   const undimMusic = useCallback(() => {
-    setBgVolume(0.05, 0.3)
-  }, [])
+    setBgVolume(baseMusicVol(), 0.3)
+  }, [muted, musicOn, musicVol])
 
   const setMusicVolume = useCallback((v) => {
-    setBgVolume(muted ? 0 : v)
-  }, [muted])
+    setBgVolume((muted || !musicOn) ? 0 : v * 0.08)
+  }, [muted, musicOn])
 
-  // Stop/restart music on mute toggle
+  // React to mute / music toggle / volume changes
   useEffect(() => {
-    if (muted && bgPlaying) setBgVolume(0, 0.1)
-    else if (!muted && bgPlaying) setBgVolume(0.05, 0.3)
-  }, [muted])
+    if (!bgPlaying) return
+    setBgVolume(baseMusicVol(), 0.2)
+  }, [muted, musicOn, musicVol])
 
   return {
     playCorrect, playWrong, playBuzz, playFartSound, playTick,
     playSecondLife, playPowerupActivate, playPowerupDeactivate,
     playRoundOver, playSkip, playVictory, startMusic, stopMusic, dimMusic, undimMusic, setMusicVolume,
+    vol,
   }
 }

@@ -3,6 +3,12 @@ import { motion } from 'framer-motion'
 import { useStore } from '../store'
 import { MuteButton } from '../components/ui'
 
+const isDev = typeof window !== 'undefined' && (
+  window.location.hostname === 'localhost' ||
+  window.location.hostname === '127.0.0.1' ||
+  window.location.hostname.startsWith('192.168.')
+)
+
 export default function HomeScreen() {
   const setScreen = useStore(s => s.setScreen)
 
@@ -81,6 +87,17 @@ export default function HomeScreen() {
           >
             🚀 Join Game
           </motion.button>
+
+          {isDev && (
+            <motion.button
+              className="btn btn-ghost btn-sm"
+              style={{ color: 'var(--red)', borderColor: 'rgba(230,57,70,0.3)', marginTop: 4 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={() => setScreen('dev-admin')}
+            >
+              🧪 Dev Admin
+            </motion.button>
+          )}
         </motion.div>
 
         <motion.div

@@ -3,14 +3,18 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useStore } from '../store'
 import { Podium, Confetti, Toast, MuteButton } from '../components/ui'
 import { useSound } from '../hooks/useSound'
+import { useGame } from '../hooks/useGame'
 
 export default function FinalScreen() {
   const store = useStore()
   const { game, myId } = { game: store.game, myId: store.myId }
   const setScreen = store.setScreen
+  const isController = store.isController()
   const { playVictory, stopMusic } = useSound()
+  const { returnToLobby, triggerRedemptionArc } = useGame()
 
   const [showConfetti, setShowConfetti] = useState(true)
+  const [goingBack, setGoingBack] = useState(false)
 
   useEffect(() => {
     stopMusic()
@@ -19,13 +23,21 @@ export default function FinalScreen() {
     return () => clearTimeout(t)
   }, [])
 
-  const players = Object.values(game?.players || {}).filter(p => p.role === 'player')
+  const players = Object.values(game?.players || {}).filter(p => p.role !== 'gamescreen')
   const sorted = [...players].sort((a, b) => (b.score || 0) - (a.score || 0))
   const winner = sorted[0]
   const me = players.find(p => p.id === myId)
   const myRank = sorted.findIndex(p => p.id === myId) + 1
 
-  function handleRestart() {
+  async function handlePlayAgain() {
+    if (goingBack) return
+    setGoingBack(true)
+    await returnToLobby(store.gameCode, game)
+    setScreen('lobby')
+  }
+
+  function handleQuit() {
+    store.setMyRole('player') // reset role so next game starts fresh
     store.setGame(null)
     store.setGameCode(null)
     store.setMyId(null)
@@ -139,20 +151,41 @@ export default function FinalScreen() {
           ))}
         </motion.div>
 
-        {/* Play again */}
+        {/* Play again / quit buttons */}
         <motion.div
-          className="row gap-12"
+          className="col gap-10"
           style={{ width: '100%' }}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 1.8 }}
         >
+          {isController ? (
+            <motion.button
+              className="btn btn-primary btn-lg btn-block"
+              whileTap={{ scale: 0.97 }}
+              onClick={handlePlayAgain}
+              disabled={goingBack}
+            >
+              {goingBack ? (
+                <div className="loading-dots"><span /><span /><span /></div>
+              ) : '🎮 Play Again (same lobby)'}
+            </motion.button>
+          ) : (
+            <motion.button
+              className="btn btn-ghost btn-block"
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setScreen('lobby')}
+            >
+              🏠 Back to Lobby
+            </motion.button>
+          )}
           <motion.button
-            className="btn btn-primary btn-lg flex-1"
+            className="btn btn-ghost btn-block"
+            style={{ color: 'var(--text3)' }}
             whileTap={{ scale: 0.97 }}
-            onClick={handleRestart}
+            onClick={handleQuit}
           >
-            🎮 Play Again
+            Leave Game
           </motion.button>
         </motion.div>
       </div>

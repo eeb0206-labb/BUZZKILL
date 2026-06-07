@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useStore } from '../store'
 import { useGame } from '../hooks/useGame'
@@ -19,30 +19,27 @@ export default function RoundPickScreen() {
   const [winner, setWinner] = useState(null)
   const [dealing, setDealing] = useState(false)
   const [allVotedCountdown, setAllVotedCountdown] = useState(null) // 5..0
+
+  // Refs — don't cause re-renders, survive effect cleanups
   const allVotedTimerRef = useRef(null)
-  const lockingRef = useRef(false)
+  const lockingRef = useRef(false)       // only set inside lockInGenre — nowhere else
+  const mainTimerRef = useRef(null)
 
   const settings = store.getSettings()
   const totalTime = settings.timers?.genreVote || 200
   const allPlayers = Object.values(game?.players || {})
-  const players = allPlayers // keep for rendering
-  // Voters = anyone who isn't a passive gamescreen
   const voters = allPlayers.filter(p => p.role !== 'gamescreen')
   const voterCount = voters.length || 1
   const votes = game?.roundVotes || {}
-  // legacy: used for vote-bar percentage
-  const playerCount = voterCount
 
+  // ── Firebase subscription ────────────────────────────────────────────────────
   useEffect(() => {
     if (!gameCode) return
     const unsub = subscribeToGame(gameCode, (g) => {
-      // Navigate away if state changes
       if (g.state === 'powerup-select') setScreen('powerup-select')
       if (g.state === 'quiz') setScreen('quiz-host')
       if (g.state === 'round-over') setScreen('round-over')
       if (g.state === 'final') setScreen('final')
-
-      // Load genres from game
       if (g.dealGenres) {
         const gs = g.dealGenres.map(id => getGenreById(id)).filter(Boolean)
         setGenres(gs)
@@ -51,14 +48,23 @@ export default function RoundPickScreen() {
     return unsub
   }, [gameCode])
 
-  // Deal genres (controller only, on mount)
+  // ── Deal genres on mount (controller only) ───────────────────────────────────
   useEffect(() => {
-    if (!isController || !game || game.dealGenres) return
+    if (!isController || !game) return
+    // Dev mode: if a specific genre was pre-selected, lock it in immediately
+    if (game.devTestGenre && !game.dealGenres) {
+      const preGenre = getGenreById(game.devTestGenre)
+      if (preGenre) {
+        lockInGenre(preGenre)
+        return
+      }
+    }
+    if (game.dealGenres) return
     setDealing(true)
     dealGenres(gameCode, game).then(() => setDealing(false))
-  }, [isController, game?.dealGenres])
+  }, [isController, game?.dealGenres, game?.devTestGenre])
 
-  // Load genres from existing game state
+  // ── Load genres from existing game state ─────────────────────────────────────
   useEffect(() => {
     if (game?.dealGenres) {
       const gs = game.dealGenres.map(id => getGenreById(id)).filter(Boolean)
@@ -66,30 +72,41 @@ export default function RoundPickScreen() {
     }
   }, [game?.dealGenres])
 
-  // Timer countdown
+  // ── Main countdown timer — synced from Firebase dealGenresAt timestamp ───────
+  // Each device derives timeLeft from the same origin, so they stay in sync.
   useEffect(() => {
     if (!genres.length || !totalTime) return
-    setTimeLeft(totalTime)
-    const interval = setInterval(() => {
-      setTimeLeft(t => {
-        if (t <= 1) {
-          clearInterval(interval)
-          if (isController) autoLock()
-          return 0
-        }
-        return t - 1
-      })
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [genres.length, totalTime, isController])
+    if (mainTimerRef.current) clearInterval(mainTimerRef.current)
 
-  // Auto-countdown when all voters have voted (controller only — one device triggers it)
+    const tick = () => {
+      const origin = game?.dealGenresAt || Date.now()
+      const elapsed = Math.floor((Date.now() - origin) / 1000)
+      const remaining = Math.max(0, totalTime - elapsed)
+      setTimeLeft(remaining)
+      if (remaining <= 0) {
+        clearInterval(mainTimerRef.current)
+        mainTimerRef.current = null
+        // Only controller auto-locks when the main timer expires
+        if (isController && !lockingRef.current) lockInGenre(pickWinner())
+      }
+    }
+
+    tick() // immediate first tick
+    mainTimerRef.current = setInterval(tick, 1000)
+    return () => { clearInterval(mainTimerRef.current); mainTimerRef.current = null }
+  }, [genres.length, totalTime, isController, game?.dealGenresAt])
+
+  // ── All-voted auto-countdown (controller only) ────────────────────────────────
+  // IMPORTANT: this effect has NO cleanup return — we don't want React to kill
+  // the interval mid-countdown when votes come in and re-trigger the effect.
+  // Unmount cleanup is handled by the separate effect below.
   useEffect(() => {
-    if (!isController || winner || lockingRef.current || !genres.length) return
+    if (!isController || winner || !genres.length) return
     const votesCast = Object.keys(votes).length
+
     if (votesCast >= voterCount && voterCount > 0) {
-      // All voted — start 5s countdown
-      if (allVotedTimerRef.current) return // already running
+      // All voted — start 5s countdown if not already running
+      if (allVotedTimerRef.current || lockingRef.current) return
       let t = 5
       setAllVotedCountdown(t)
       allVotedTimerRef.current = setInterval(() => {
@@ -98,44 +115,40 @@ export default function RoundPickScreen() {
         if (t <= 0) {
           clearInterval(allVotedTimerRef.current)
           allVotedTimerRef.current = null
-          if (!lockingRef.current) {
-            lockingRef.current = true
-            autoLock()
-          }
+          setAllVotedCountdown(null)
+          // lockInGenre owns the lockingRef guard — do not pre-set it here
+          lockInGenre(pickWinner())
         }
       }, 1000)
     } else {
-      // Votes rescinded / not all in yet — cancel countdown
+      // Votes dropped below threshold — cancel running countdown
       if (allVotedTimerRef.current) {
         clearInterval(allVotedTimerRef.current)
         allVotedTimerRef.current = null
-      }
-      setAllVotedCountdown(null)
-    }
-    return () => {
-      if (allVotedTimerRef.current) {
-        clearInterval(allVotedTimerRef.current)
-        allVotedTimerRef.current = null
+        setAllVotedCountdown(null)
       }
     }
+    // ← intentionally no cleanup return here
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [Object.keys(votes).length, voterCount, isController, winner, genres.length])
 
-  // Vote counts per genre
+  // ── Unmount cleanup for all-voted timer ──────────────────────────────────────
+  useEffect(() => () => {
+    if (allVotedTimerRef.current) clearInterval(allVotedTimerRef.current)
+  }, [])
+
+  // ── Vote helpers ─────────────────────────────────────────────────────────────
   function voteCountFor(genreId) {
     return Object.values(votes).filter(v => v === genreId).length
   }
 
-  function getLeadingGenre() {
+  // Returns the genre with the most votes; randomly breaks ties (coin toss)
+  function pickWinner() {
     if (!genres.length) return null
-    return genres.reduce((best, g) => {
-      const count = voteCountFor(g.id)
-      return count > voteCountFor(best?.id || '') ? g : best
-    }, genres[0])
-  }
-
-  async function autoLock() {
-    const leading = getLeadingGenre()
-    if (leading) await lockInGenre(leading)
+    const counts = genres.map(g => ({ g, n: voteCountFor(g.id) }))
+    const maxVotes = Math.max(...counts.map(c => c.n))
+    const tied = counts.filter(c => c.n === maxVotes).map(c => c.g)
+    return tied[Math.floor(Math.random() * tied.length)]
   }
 
   async function handleVote(genre) {
@@ -144,17 +157,20 @@ export default function RoundPickScreen() {
     await voteForGenre(gameCode, myId, genre.id)
   }
 
+  // ── Lock in a genre and start the round ─────────────────────────────────────
   async function lockInGenre(genre) {
-    if (lockingRef.current) return
+    if (!genre || lockingRef.current) return
     lockingRef.current = true
-    // Cancel any running all-voted countdown
+
+    // Cancel any running countdowns
     if (allVotedTimerRef.current) {
       clearInterval(allVotedTimerRef.current)
       allVotedTimerRef.current = null
     }
     setAllVotedCountdown(null)
     setWinner(genre)
-    await new Promise(r => setTimeout(r, 1000))
+
+    await new Promise(r => setTimeout(r, 1200))
     await selectGenre(gameCode, genre.id, genre.name, genre.emoji, genre.gameType, genre.color)
   }
 
@@ -165,16 +181,14 @@ export default function RoundPickScreen() {
     <div className="screen">
       <div className="topbar">
         <div className="row gap-8">
-          <div className="round-badge">
-            Round {currentRound}/{totalRounds}
-          </div>
+          <div className="round-badge">Round {currentRound}/{totalRounds}</div>
         </div>
         <div className="topbar-logo">Pick a Round</div>
         <MuteButton />
       </div>
 
       <div className="screen-inner">
-        {/* Timer + vote count */}
+        {/* Vote count + timer — timer only shown for non-controller (controller sees countdown banner) */}
         <motion.div
           className="row"
           style={{ justifyContent: 'space-between', alignItems: 'center' }}
@@ -184,7 +198,7 @@ export default function RoundPickScreen() {
           <div style={{ fontSize: '0.85rem', color: 'var(--text2)' }}>
             {Object.keys(votes).length}/{voterCount} voted
           </div>
-          {totalTime > 0 && (
+          {totalTime > 0 && timeLeft > 0 && !winner && (
             <TimerRing seconds={timeLeft} total={totalTime} size={60} />
           )}
         </motion.div>
@@ -222,10 +236,8 @@ export default function RoundPickScreen() {
               const voteCount = voteCountFor(genre.id)
               const isMyVote = myVote === genre.id
               const isWinner = winner?.id === genre.id
-              const votePercent = playerCount > 0 ? (voteCount / playerCount) * 100 : 0
-
-              // Who voted for this
-              const voters = players.filter(p => votes[p.id] === genre.id)
+              const votePercent = voterCount > 0 ? (voteCount / voterCount) * 100 : 0
+              const votersForGenre = allPlayers.filter(p => votes[p.id] === genre.id)
 
               return (
                 <motion.div
@@ -234,7 +246,7 @@ export default function RoundPickScreen() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.1, type: 'spring', stiffness: 300, damping: 25 }}
-                  onClick={() => !isGameScreen && handleVote(genre)}
+                  onClick={() => !isGameScreen && !winner && handleVote(genre)}
                   style={{ borderColor: isWinner ? 'var(--gold)' : isMyVote ? 'var(--accent)' : undefined }}
                 >
                   <div className="row gap-12">
@@ -267,9 +279,9 @@ export default function RoundPickScreen() {
                   </div>
 
                   {/* Voter avatars */}
-                  {voters.length > 0 && (
+                  {votersForGenre.length > 0 && (
                     <div className="row gap-4" style={{ marginTop: 8, flexWrap: 'wrap' }}>
-                      {voters.map(p => (
+                      {votersForGenre.map(p => (
                         <Avatar key={p.id} src={p.avatar} name={p.name} colorHex={p.colorHex} size={24} />
                       ))}
                     </div>
@@ -292,30 +304,6 @@ export default function RoundPickScreen() {
           </div>
         )}
 
-        {/* Controller actions — Start Round immediately */}
-        {isController && genres.length > 0 && !winner && (
-          <motion.div
-            className="col gap-8"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-          >
-            <div className="divider">or start now</div>
-            <div className="row gap-8">
-              {genres.map(g => (
-                <button
-                  key={g.id}
-                  className="btn btn-ghost flex-1"
-                  style={{ border: `1px solid ${g.color}44`, color: g.color, fontSize: '0.8rem', padding: '10px 8px' }}
-                  onClick={() => lockInGenre(g)}
-                >
-                  {g.emoji} Start {g.name}
-                </button>
-              ))}
-            </div>
-          </motion.div>
-        )}
-
         {/* Winner announcement */}
         <AnimatePresence>
           {winner && (
@@ -334,8 +322,8 @@ export default function RoundPickScreen() {
           )}
         </AnimatePresence>
 
-        {/* Voter hint for players */}
-        {!isController && !isGameScreen && !myVote && genres.length > 0 && (
+        {/* Hint for players */}
+        {!isController && !isGameScreen && !myVote && genres.length > 0 && !winner && (
           <motion.div
             className="card center"
             style={{ background: 'rgba(192,132,252,0.05)', color: 'var(--accent)', fontSize: '0.9rem' }}

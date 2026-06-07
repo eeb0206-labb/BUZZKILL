@@ -5,6 +5,7 @@ import { useGame } from '../hooks/useGame'
 import { Avatar, TimerRing, Modal, Toast, MuteButton } from '../components/ui'
 import { useSound } from '../hooks/useSound'
 import { db, ref, update } from '../firebase'
+import SettingsOverlay from '../components/SettingsOverlay'
 
 function answersMatch(submitted, correct) {
   if (!submitted || !correct) return false
@@ -41,11 +42,12 @@ export default function QuizPlayerScreen() {
   const store = useStore()
   const { game, myId, gameCode } = { game: store.game, myId: store.myId, gameCode: store.gameCode }
   const setScreen = store.setScreen
-  const { subscribeToGame, buzzIn, usePowerup, useSecondLife, blockPlayer, setPlagiarismTarget, markAnswer } = useGame()
+  const { subscribeToGame, buzzIn, usePowerup, useSecondLife, blockPlayer, setPlagiarismTarget, markAnswer, stealPowerup } = useGame()
   const { playBuzz, playFartSound, playSecondLife, playPowerupActivate, playTick, playCorrect, playWrong, startMusic } = useSound()
 
   const [blocked, setBlocked] = useState(null) // reason string
   const [showBlockedReason, setShowBlockedReason] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [sneakResult, setSneakResult] = useState(null)
   const [timerSeconds, setTimerSeconds] = useState(0)
   const [timerTotal, setTimerTotal] = useState(0)
@@ -150,18 +152,11 @@ export default function QuizPlayerScreen() {
       return
     }
 
-    if (iWasWrong && !me?.secondLifeUsed) {
-      // Offer second life
-      setBlocked('second-life')
-      setShowBlockedReason(true)
-      return
-    }
-
-    if (iWasWrong && me?.secondLifeUsed) {
+    if (iWasWrong) {
       playFartSound()
-      setBlocked('You already got this one wrong! 💀')
+      setBlocked('You already answered this one! 💀')
       setShowBlockedReason(true)
-      setTimeout(() => setShowBlockedReason(false), 2500)
+      setTimeout(() => setShowBlockedReason(false), 2000)
       return
     }
 
@@ -233,13 +228,35 @@ export default function QuizPlayerScreen() {
         buzzer: { playerId: targetId, timestamp: Date.now(), forcedBy: myId, colorId: target?.colorId || 'red' },
         questionRevealed: true,
       })
-      store.setToast({ message: `${target?.name} must answer! 😈`, icon: '✓' })
+      store.setToast({ message: `${target?.name} must answer! 😈`, icon: '😈' })
+    } else {
+      store.setToast({ message: 'No Imposter uses left!', icon: '😈' })
     }
+  }
+
+  const [stealTargetModal, setStealTargetModal] = useState(null) // targetId waiting for powerup pick
+  const [stealPowerupModal, setStealPowerupModal] = useState(null) // targetId → pick which powerup
+
+  async function handleSteal() {
+    openTargetPicker('steal', (targetId) => {
+      setStealPowerupModal(targetId)
+    })
+  }
+
+  async function executeSteal(targetId, powerupKey) {
+    const target = game?.players?.[targetId]
+    const ok = await stealPowerup(gameCode, myId, targetId, powerupKey)
+    if (ok) {
+      store.setToast({ message: `Stole ${POWERUP_INFO[powerupKey]?.icon} from ${target?.name}! 🤑`, icon: '✓' })
+    } else {
+      store.setToast({ message: 'Steal failed!', icon: '⚠️' })
+    }
+    setStealPowerupModal(null)
   }
 
   const myColor = me?.colorHex || '#a855f7'
   const hasDoublePoints = game?.powerupRound?.[myId]
-  const otherPlayers = Object.values(game?.players || {}).filter(p => p.id !== myId && p.role === 'player')
+  const otherPlayers = Object.values(game?.players || {}).filter(p => p.id !== myId && p.role !== 'gamescreen')
 
   return (
     <div className="screen">
@@ -255,6 +272,7 @@ export default function QuizPlayerScreen() {
         <div className="row gap-8">
           <div style={{ fontFamily: 'var(--font-mono)', color: myColor, fontWeight: 700 }}>{me?.score || 0}</div>
           <MuteButton />
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowSettings(true)}>⚙️</button>
         </div>
       </div>
 
@@ -275,23 +293,24 @@ export default function QuizPlayerScreen() {
         )}
       </AnimatePresence>
 
-      {/* Second life offer */}
+      {/* Forced to answer notification */}
       <AnimatePresence>
-        {showBlockedReason && blocked === 'second-life' && (
+        {isMyTurnForced && (
           <motion.div
             className="blocked-overlay"
+            style={{ background: 'rgba(230,57,70,0.92)' }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            <motion.div style={{ fontSize: '4rem' }} animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1.5 }}>💙</motion.div>
-            <div className="blocked-reason">Use your Second Life?</div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text2)', textAlign: 'center', padding: '0 32px' }}>
-              You got it wrong, but you have a second chance to buzz in!
-            </div>
-            <div className="row gap-12">
-              <button className="btn btn-green btn-lg" onClick={handleSecondLife}>💙 Use it!</button>
-              <button className="btn btn-ghost" onClick={() => setShowBlockedReason(false)}>Skip</button>
+            <motion.div
+              style={{ fontSize: '3.5rem' }}
+              animate={{ rotate: [0,-10,10,-10,10,0], scale: [1,1.1,1] }}
+              transition={{ duration: 0.6 }}
+            >😈</motion.div>
+            <div className="blocked-reason" style={{ color: 'white' }}>You've been forced to answer!</div>
+            <div style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.8)', textAlign: 'center' }}>
+              by {game?.players?.[buzzer?.forcedBy]?.name || 'someone'}
             </div>
           </motion.div>
         )}
@@ -348,10 +367,17 @@ export default function QuizPlayerScreen() {
             ref={buzzerRef}
             className={`buzzer ${(someoneBuzzing && !isBuzzing) || iWasWrong ? 'buzzer-disabled' : ''} ${isBuzzing ? 'buzzer-glow' : ''}`}
             style={{
-              background: `radial-gradient(circle at 35% 35%, ${myColor}cc, ${myColor}88)`,
+              background: iWasWrong
+                ? 'radial-gradient(circle at 35% 35%, #555, #333)'
+                : `radial-gradient(circle at 35% 35%, ${myColor}ee, ${myColor}99)`,
               '--player-color': myColor,
+              boxShadow: isBuzzing
+                ? `0 0 40px ${myColor}99, 0 0 80px ${myColor}44, inset 0 2px 0 rgba(255,255,255,0.25)`
+                : iWasWrong
+                ? 'none'
+                : `0 8px 24px ${myColor}44, inset 0 2px 0 rgba(255,255,255,0.2)`,
             }}
-            whileTap={!someoneBuzzing && !iWasWrong ? { scale: 0.93 } : {}}
+            whileTap={!someoneBuzzing && !iWasWrong ? { scale: 0.91, y: 4 } : {}}
             onMouseDown={handleBuzzAttempt}
             onTouchStart={handleBuzzAttempt}
           >
@@ -365,33 +391,42 @@ export default function QuizPlayerScreen() {
 
             <AnimatePresence mode="wait">
               {isBuzzing ? (
-                <motion.div key="buzzing" className="col center" style={{ gap: 4 }}
-                  initial={{ scale: 0.8 }} animate={{ scale: 1 }} exit={{ scale: 0.8 }}>
-                  <div style={{ fontSize: '2rem' }}>{isQM ? '🎤' : '✏️'}</div>
-                  <div>{isQM ? 'ANSWER!' : 'TYPE IT!'}</div>
+                <motion.div key="buzzing" className="col center" style={{ gap: 6 }}
+                  initial={{ scale: 0.7, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.8, opacity: 0 }}>
+                  <motion.div
+                    style={{ fontSize: '2.5rem' }}
+                    animate={{ scale: [1, 1.15, 1] }}
+                    transition={{ repeat: Infinity, duration: 0.7 }}
+                  >{isQM ? '🎤' : '✏️'}</motion.div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 900, letterSpacing: '0.05em' }}>{isQM ? 'ANSWER!' : 'TYPE IT!'}</div>
+                  <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>{me?.name}</div>
                   {timerSeconds > 0 && (
-                    <div style={{ fontSize: '1.5rem', fontFamily: 'var(--font-mono)' }}>{timerSeconds}s</div>
+                    <div style={{ fontSize: '1.8rem', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{timerSeconds}s</div>
                   )}
                 </motion.div>
               ) : someoneBuzzing ? (
-                <motion.div key="other" className="col center" style={{ gap: 4 }}
-                  initial={{ scale: 0.8 }} animate={{ scale: 1 }} exit={{ scale: 0.8 }}>
+                <motion.div key="other" className="col center" style={{ gap: 6 }}
+                  initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.8, opacity: 0 }}>
                   <div style={{ fontSize: '2rem' }}>🔕</div>
-                  <div style={{ fontSize: '1rem' }}>{game?.players?.[buzzer?.playerId]?.name || 'BUZZING'}</div>
+                  <div style={{ fontSize: '1rem', fontWeight: 700 }}>{game?.players?.[buzzer?.playerId]?.name || '...'}</div>
+                  <div style={{ fontSize: '0.8rem', opacity: 0.7 }}>is answering</div>
                 </motion.div>
               ) : iWasWrong ? (
-                <motion.div key="wrong" className="col center" style={{ gap: 4 }}
-                  initial={{ scale: 0.8 }} animate={{ scale: 1 }}>
-                  <div style={{ fontSize: '2rem' }}>✗</div>
-                  <div style={{ fontSize: '0.9rem' }}>Got it wrong</div>
-                  {!me?.secondLifeUsed && (
-                    <div style={{ fontSize: '0.75rem', color: 'var(--gold)' }}>tap for 💙</div>
-                  )}
+                <motion.div key="wrong" className="col center" style={{ gap: 6 }}
+                  initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
+                  <div style={{ fontSize: '2.5rem' }}>✗</div>
+                  <div style={{ fontSize: '1rem', fontWeight: 700 }}>OUT</div>
+                  <div style={{ fontSize: '0.78rem', opacity: 0.7 }}>Already answered</div>
                 </motion.div>
               ) : (
-                <motion.div key="ready" className="col center" style={{ gap: 4 }}
-                  initial={{ scale: 0.8 }} animate={{ scale: 1 }}>
-                  <div>BUZZ!</div>
+                <motion.div key="ready" className="col center" style={{ gap: 6 }}
+                  initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
+                  <motion.div
+                    style={{ fontSize: '2.2rem', fontWeight: 900, letterSpacing: '0.05em', color: 'white' }}
+                    animate={{ scale: [1, 1.04, 1] }}
+                    transition={{ repeat: Infinity, duration: 1.8, ease: 'easeInOut' }}
+                  >BUZZ!</motion.div>
+                  <div style={{ fontSize: '0.85rem', opacity: 0.7, fontWeight: 600 }}>{me?.name}</div>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -468,6 +503,14 @@ export default function QuizPlayerScreen() {
                   😈 Force ×{myPowerups.imposter}
                 </button>
               )}
+
+              {/* Steal */}
+              {(myPowerups.steal || 0) > 0 && (
+                <button className="btn btn-ghost btn-sm" style={{ borderColor: '#57cc99', color: '#57cc99' }}
+                  onClick={handleSteal}>
+                  🤑 Steal ×{myPowerups.steal}
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -513,6 +556,44 @@ export default function QuizPlayerScreen() {
         </div>
       </Modal>
 
+      {/* Steal powerup picker — choose WHICH powerup to steal from target */}
+      <Modal
+        show={!!stealPowerupModal}
+        onClose={() => setStealPowerupModal(null)}
+        title="🤑 Steal which powerup?"
+      >
+        <div className="col gap-8">
+          {stealPowerupModal && Object.entries(game?.players?.[stealPowerupModal]?.powerups || {})
+            .filter(([key, count]) => key !== 'doublePoints' && count > 0)
+            .map(([key, count]) => {
+              const info = POWERUP_INFO[key]
+              if (!info) return null
+              return (
+                <motion.div
+                  key={key}
+                  className="player-row"
+                  style={{ cursor: 'pointer', borderColor: info.color }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => executeSteal(stealPowerupModal, key)}
+                >
+                  <div style={{ fontSize: '1.5rem' }}>{info.icon}</div>
+                  <div className="flex-1">
+                    <div style={{ fontWeight: 700, color: info.color }}>{info.label}</div>
+                  </div>
+                  <div style={{ fontFamily: 'var(--font-mono)', color: info.color }}>×{count}</div>
+                </motion.div>
+              )
+            })}
+          {stealPowerupModal && Object.entries(game?.players?.[stealPowerupModal]?.powerups || {})
+            .filter(([key, count]) => key !== 'doublePoints' && count > 0).length === 0 && (
+            <div style={{ color: 'var(--text3)', fontSize: '0.9rem', textAlign: 'center', padding: 16 }}>
+              This player has no powerups to steal!
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      <SettingsOverlay show={showSettings} onClose={() => setShowSettings(false)} />
       <Toast />
     </div>
   )
