@@ -49,7 +49,7 @@ function adminApiPlugin() {
 
 export default defineConfig({
   plugins: [react(), adminApiPlugin()],
-  server: { port: 5174 },
+  server: { port: 5200, host: true },
   define: {
     // Expose whether we're in dev mode to the client
     __DEV_MODE__: JSON.stringify(process.env.NODE_ENV !== 'production'),

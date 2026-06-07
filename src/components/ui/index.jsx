@@ -101,6 +101,7 @@ export function Avatar({ src, name, colorHex, size = 40 }) {
 export function CameraCapture({ onCapture, onSkip }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
+  const fileRef = useRef(null)
   const [streaming, setStreaming] = useState(false)
   const [captured, setCaptured] = useState(null)
   const [error, setError] = useState(null)
@@ -110,12 +111,9 @@ export function CameraCapture({ onCapture, onSkip }) {
     navigator.mediaDevices?.getUserMedia({ video: { facingMode: 'user' }, audio: false })
       .then(s => {
         stream = s
-        if (videoRef.current) {
-          videoRef.current.srcObject = s
-          setStreaming(true)
-        }
+        if (videoRef.current) { videoRef.current.srcObject = s; setStreaming(true) }
       })
-      .catch(e => { setError('Camera not available'); setStreaming(false) })
+      .catch(() => { setError('no-camera'); setStreaming(false) })
     return () => { stream?.getTracks().forEach(t => t.stop()) }
   }, [])
 
@@ -125,50 +123,66 @@ export function CameraCapture({ onCapture, onSkip }) {
     c.width = v.videoWidth || 320
     c.height = v.videoHeight || 240
     c.getContext('2d').drawImage(v, 0, 0)
-    const data = c.toDataURL('image/jpeg', 0.7)
-    setCaptured(data)
+    setCaptured(c.toDataURL('image/jpeg', 0.7))
   }, [])
 
-  const confirm = useCallback(() => {
-    if (captured) onCapture(captured)
-  }, [captured, onCapture])
+  function handleFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => setCaptured(ev.target.result)
+    reader.readAsDataURL(file)
+  }
 
-  if (error) {
+  // Preview + confirm (shared between camera snap and file upload)
+  if (captured) {
     return (
       <div className="col center" style={{ gap: 12 }}>
-        <div style={{ fontSize: '2rem' }}>📸</div>
-        <p className="muted" style={{ fontSize: '0.85rem' }}>Camera not available</p>
-        <button className="btn btn-ghost btn-sm" onClick={onSkip}>Continue without photo</button>
+        <img src={captured} alt="preview"
+          style={{ width: 160, height: 160, borderRadius: '50%', objectFit: 'cover' }} />
+        <div className="row gap-8">
+          <button className="btn btn-green" onClick={() => onCapture(captured)}>✓ Use this</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setCaptured(null)}>Retake</button>
+        </div>
       </div>
     )
   }
 
+  // No camera — upload only
+  if (error) {
+    return (
+      <div className="col center" style={{ gap: 12 }}>
+        <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
+        <button className="btn btn-primary" onClick={() => fileRef.current?.click()}>📤 Upload from Gallery</button>
+        {onSkip && <button className="btn btn-ghost btn-sm" onClick={onSkip}>Continue without photo</button>}
+      </div>
+    )
+  }
+
+  // Camera available — show live feed + option to upload instead
   return (
     <div className="col" style={{ gap: 12, alignItems: 'center' }}>
       {!captured ? (
         <>
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            style={{ width: '100%', maxWidth: 280, borderRadius: 12, transform: 'scaleX(-1)' }}
-          />
+          <video ref={videoRef} autoPlay playsInline muted
+            style={{ width: '100%', maxWidth: 280, borderRadius: 12, transform: 'scaleX(-1)' }} />
           <canvas ref={canvasRef} style={{ display: 'none' }} />
-          <div className="row gap-8">
-            <button className="btn btn-primary" onClick={snap} disabled={!streaming}>📸 Take Selfie</button>
-            <button className="btn btn-ghost btn-sm" onClick={onSkip}>Skip</button>
+          <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
+          <div className="col center" style={{ gap: 6 }}>
+            <div className="row gap-8">
+              <button className="btn btn-primary" onClick={snap} disabled={!streaming}>📸 Take Selfie</button>
+              {onSkip && <button className="btn btn-ghost btn-sm" onClick={onSkip}>Skip</button>}
+            </div>
+            <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.78rem' }}
+              onClick={() => fileRef.current?.click()}>📤 Upload from gallery instead</button>
           </div>
         </>
       ) : (
         <>
-          <img
-            src={captured}
-            alt="preview"
-            style={{ width: 160, height: 160, borderRadius: '50%', objectFit: 'cover', transform: 'scaleX(-1)' }}
-          />
+          <img src={captured} alt="preview"
+            style={{ width: 160, height: 160, borderRadius: '50%', objectFit: 'cover' }} />
           <div className="row gap-8">
-            <button className="btn btn-green" onClick={confirm}>✓ Use this</button>
+            <button className="btn btn-green" onClick={() => onCapture(captured)}>✓ Use this</button>
             <button className="btn btn-ghost btn-sm" onClick={() => setCaptured(null)}>Retake</button>
           </div>
         </>
