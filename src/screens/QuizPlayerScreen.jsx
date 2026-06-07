@@ -6,6 +6,16 @@ import { Avatar, TimerRing, Modal, Toast, MuteButton } from '../components/ui'
 import { useSound } from '../hooks/useSound'
 import { db, ref, update } from '../firebase'
 
+function answersMatch(submitted, correct) {
+  if (!submitted || !correct) return false
+  const norm = s => s.toLowerCase().trim().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ')
+  const a = norm(submitted)
+  const b = norm(correct)
+  if (a === b) return true
+  if (a.includes(b) || b.includes(a)) return true
+  return false
+}
+
 const POWERUP_INFO = {
   sneakPeek:  { icon: '🔍', label: 'Sneak Peek',  color: '#4895ef' },
   steal:      { icon: '🤑', label: 'Steal',        color: '#57cc99' },
@@ -31,8 +41,8 @@ export default function QuizPlayerScreen() {
   const store = useStore()
   const { game, myId, gameCode } = { game: store.game, myId: store.myId, gameCode: store.gameCode }
   const setScreen = store.setScreen
-  const { subscribeToGame, buzzIn, usePowerup, useSecondLife, blockPlayer, setPlagiarismTarget } = useGame()
-  const { playBuzz, playFartSound, playSecondLife, playPowerupActivate, playTick, startMusic } = useSound()
+  const { subscribeToGame, buzzIn, usePowerup, useSecondLife, blockPlayer, setPlagiarismTarget, markAnswer } = useGame()
+  const { playBuzz, playFartSound, playSecondLife, playPowerupActivate, playTick, playCorrect, playWrong, startMusic } = useSound()
 
   const [blocked, setBlocked] = useState(null) // reason string
   const [showBlockedReason, setShowBlockedReason] = useState(false)
@@ -43,8 +53,11 @@ export default function QuizPlayerScreen() {
   const [powerupModal, setPowerupModal] = useState(null) // 'steal' | 'imposter' | 'plagiarism' | 'block'
   const [targetModal, setTargetModal] = useState(null) // { powerup, onSelect }
   const [ripples, setRipples] = useState([])
+  const [myAnswer, setMyAnswer] = useState('')
+  const [answerSubmitted, setAnswerSubmitted] = useState(false)
   const buzzerRef = useRef(null)
   const settings = store.getSettings()
+  const isQM = !!settings.questionMaster
 
   const me = game?.players?.[myId]
   const myPowerups = me?.powerups || {}
@@ -67,6 +80,25 @@ export default function QuizPlayerScreen() {
     })
     return unsub
   }, [gameCode])
+
+  // Reset answer input when question changes
+  useEffect(() => {
+    setMyAnswer('')
+    setAnswerSubmitted(false)
+  }, [game?.currentQIndex])
+
+  // No-QM self-marking: player types answer, auto-compare
+  const handleSubmitAnswer = useCallback(async () => {
+    if (!myAnswer.trim() || answerSubmitted || isQM) return
+    setAnswerSubmitted(true)
+    const correct = answersMatch(myAnswer, game?.currentQ?.a)
+    if (correct) {
+      playCorrect?.()
+    } else {
+      playWrong?.()
+    }
+    await markAnswer(gameCode, game, correct)
+  }, [myAnswer, answerSubmitted, isQM, game, gameCode, markAnswer])
 
   // Answer timer when I'm buzzing
   useEffect(() => {
@@ -335,8 +367,8 @@ export default function QuizPlayerScreen() {
               {isBuzzing ? (
                 <motion.div key="buzzing" className="col center" style={{ gap: 4 }}
                   initial={{ scale: 0.8 }} animate={{ scale: 1 }} exit={{ scale: 0.8 }}>
-                  <div style={{ fontSize: '2rem' }}>🎤</div>
-                  <div>ANSWER!</div>
+                  <div style={{ fontSize: '2rem' }}>{isQM ? '🎤' : '✏️'}</div>
+                  <div>{isQM ? 'ANSWER!' : 'TYPE IT!'}</div>
                   {timerSeconds > 0 && (
                     <div style={{ fontSize: '1.5rem', fontFamily: 'var(--font-mono)' }}>{timerSeconds}s</div>
                   )}
@@ -365,6 +397,35 @@ export default function QuizPlayerScreen() {
             </AnimatePresence>
           </motion.button>
         </div>
+
+        {/* No-QM: answer input when this player buzzed */}
+        <AnimatePresence>
+          {isBuzzing && !isQM && (
+            <motion.div
+              className="col gap-8"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+            >
+              <input
+                className="input"
+                placeholder="Type your answer..."
+                value={myAnswer}
+                onChange={e => setMyAnswer(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSubmitAnswer()}
+                autoFocus
+                style={{ fontSize: '1.1rem', textAlign: 'center' }}
+              />
+              <button
+                className="btn btn-gold btn-lg"
+                onClick={handleSubmitAnswer}
+                disabled={!myAnswer.trim() || answerSubmitted}
+              >
+                Submit Answer →
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Powerups panel */}
         {Object.values(myPowerups).some(v => v > 0) && (

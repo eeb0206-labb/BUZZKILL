@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useStore } from '../store'
 import { useGame } from '../hooks/useGame'
@@ -18,12 +18,20 @@ export default function RoundPickScreen() {
   const [timeLeft, setTimeLeft] = useState(0)
   const [winner, setWinner] = useState(null)
   const [dealing, setDealing] = useState(false)
+  const [allVotedCountdown, setAllVotedCountdown] = useState(null) // 5..0
+  const allVotedTimerRef = useRef(null)
+  const lockingRef = useRef(false)
 
   const settings = store.getSettings()
   const totalTime = settings.timers?.genreVote || 200
-  const players = Object.values(game?.players || {})
+  const allPlayers = Object.values(game?.players || {})
+  const players = allPlayers // keep for rendering
+  // Voters = anyone who isn't a passive gamescreen
+  const voters = allPlayers.filter(p => p.role !== 'gamescreen')
+  const voterCount = voters.length || 1
   const votes = game?.roundVotes || {}
-  const playerCount = players.filter(p => p.role === 'player').length || 1
+  // legacy: used for vote-bar percentage
+  const playerCount = voterCount
 
   useEffect(() => {
     if (!gameCode) return
@@ -75,6 +83,43 @@ export default function RoundPickScreen() {
     return () => clearInterval(interval)
   }, [genres.length, totalTime, isController])
 
+  // Auto-countdown when all voters have voted (controller only — one device triggers it)
+  useEffect(() => {
+    if (!isController || winner || lockingRef.current || !genres.length) return
+    const votesCast = Object.keys(votes).length
+    if (votesCast >= voterCount && voterCount > 0) {
+      // All voted — start 5s countdown
+      if (allVotedTimerRef.current) return // already running
+      let t = 5
+      setAllVotedCountdown(t)
+      allVotedTimerRef.current = setInterval(() => {
+        t -= 1
+        setAllVotedCountdown(t)
+        if (t <= 0) {
+          clearInterval(allVotedTimerRef.current)
+          allVotedTimerRef.current = null
+          if (!lockingRef.current) {
+            lockingRef.current = true
+            autoLock()
+          }
+        }
+      }, 1000)
+    } else {
+      // Votes rescinded / not all in yet — cancel countdown
+      if (allVotedTimerRef.current) {
+        clearInterval(allVotedTimerRef.current)
+        allVotedTimerRef.current = null
+      }
+      setAllVotedCountdown(null)
+    }
+    return () => {
+      if (allVotedTimerRef.current) {
+        clearInterval(allVotedTimerRef.current)
+        allVotedTimerRef.current = null
+      }
+    }
+  }, [Object.keys(votes).length, voterCount, isController, winner, genres.length])
+
   // Vote counts per genre
   function voteCountFor(genreId) {
     return Object.values(votes).filter(v => v === genreId).length
@@ -100,6 +145,14 @@ export default function RoundPickScreen() {
   }
 
   async function lockInGenre(genre) {
+    if (lockingRef.current) return
+    lockingRef.current = true
+    // Cancel any running all-voted countdown
+    if (allVotedTimerRef.current) {
+      clearInterval(allVotedTimerRef.current)
+      allVotedTimerRef.current = null
+    }
+    setAllVotedCountdown(null)
     setWinner(genre)
     await new Promise(r => setTimeout(r, 1000))
     await selectGenre(gameCode, genre.id, genre.name, genre.emoji, genre.gameType, genre.color)
@@ -129,12 +182,30 @@ export default function RoundPickScreen() {
           animate={{ opacity: 1 }}
         >
           <div style={{ fontSize: '0.85rem', color: 'var(--text2)' }}>
-            {Object.keys(votes).length}/{players.length} voted
+            {Object.keys(votes).length}/{voterCount} voted
           </div>
           {totalTime > 0 && (
             <TimerRing seconds={timeLeft} total={totalTime} size={60} />
           )}
         </motion.div>
+
+        {/* All-voted countdown banner */}
+        <AnimatePresence>
+          {allVotedCountdown !== null && allVotedCountdown > 0 && !winner && (
+            <motion.div
+              className="card center"
+              style={{ background: 'rgba(192,132,252,0.1)', borderColor: 'var(--accent)', gap: 4 }}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <div style={{ fontSize: '0.8rem', color: 'var(--text2)' }}>All votes in! Starting in…</div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '2rem', color: 'var(--accent)', fontWeight: 700 }}>
+                {allVotedCountdown}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Loading state */}
         {(dealing || !genres.length) && (
@@ -221,7 +292,7 @@ export default function RoundPickScreen() {
           </div>
         )}
 
-        {/* Controller actions */}
+        {/* Controller actions — Start Round immediately */}
         {isController && genres.length > 0 && !winner && (
           <motion.div
             className="col gap-8"
@@ -229,7 +300,7 @@ export default function RoundPickScreen() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}
           >
-            <div className="divider">or choose now</div>
+            <div className="divider">or start now</div>
             <div className="row gap-8">
               {genres.map(g => (
                 <button
@@ -238,7 +309,7 @@ export default function RoundPickScreen() {
                   style={{ border: `1px solid ${g.color}44`, color: g.color, fontSize: '0.8rem', padding: '10px 8px' }}
                   onClick={() => lockInGenre(g)}
                 >
-                  {g.emoji} {g.name}
+                  {g.emoji} Start {g.name}
                 </button>
               ))}
             </div>

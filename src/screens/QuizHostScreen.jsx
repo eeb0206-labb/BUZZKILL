@@ -7,6 +7,18 @@ import { useSound } from '../hooks/useSound'
 import { generateQuizQuestions } from '../hooks/useAI'
 import { getGenreById } from '../data/genres'
 
+// Loose answer comparison — trims, lowercases, strips punctuation
+function answersMatch(submitted, correct) {
+  if (!submitted || !correct) return false
+  const norm = s => s.toLowerCase().trim().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ')
+  const a = norm(submitted)
+  const b = norm(correct)
+  if (a === b) return true
+  // Allow one to be a substring of the other (handles "The Beatles" vs "Beatles")
+  if (a.includes(b) || b.includes(a)) return true
+  return false
+}
+
 export default function QuizHostScreen() {
   const store = useStore()
   const { game, myId, gameCode } = { game: store.game, myId: store.myId, gameCode: store.gameCode }
@@ -21,20 +33,73 @@ export default function QuizHostScreen() {
   const { playCorrect, playWrong, playBuzz, playSkip, startMusic, stopMusic, dimMusic, undimMusic } = useSound()
 
   const [questions, setQuestions] = useState([])
+  const questionsRef = useRef([]) // stable ref for callbacks
   const [loadingQ, setLoadingQ] = useState(false)
   const [timerSeconds, setTimerSeconds] = useState(0)
   const [timerTotal, setTimerTotal] = useState(0)
   const timerRef = useRef(null)
+  const autoAdvancingRef = useRef(false) // prevent double-advance in no-QM mode
   const [showSkipConfirm, setShowSkipConfirm] = useState(false)
   const [imposterTarget, setImposterTarget] = useState(null)
 
+  // No-QM buzzer state (host plays along)
+  const [myAnswer, setMyAnswer] = useState('')
+  const [answerSubmitted, setAnswerSubmitted] = useState(false)
+  const [ripples, setRipples] = useState([])
+  const buzzerRef = useRef(null)
+
   const settings = store.getSettings()
+  const isQM = !!settings.questionMaster   // true = human QM, false = computer/no-host mode
   const genre = game?.currentGenre
   const currentQ = game?.currentQ
   const buzzer = game?.buzzer
   const buzzedPlayer = buzzer ? game?.players?.[buzzer.playerId] : null
   const wrongAnswerers = game?.wrongAnswerers || []
-  const players = Object.values(game?.players || {}).filter(p => p.role === 'player')
+  // In QM mode only show players; in no-QM mode show everyone (host/cohost play too)
+  const players = Object.values(game?.players || {}).filter(p => isQM ? p.role === 'player' : p.role !== 'gamescreen')
+
+  const me = game?.players?.[myId]
+  const myColor = me?.colorHex || '#a855f7'
+  const isBuzzing = buzzer?.playerId === myId
+  const someoneBuzzing = !!buzzer
+
+  // Reset answer input when question changes
+  useEffect(() => {
+    setMyAnswer('')
+    setAnswerSubmitted(false)
+  }, [game?.currentQIndex])
+
+  // No-QM: host buzzes in
+  const handleHostBuzz = useCallback((e) => {
+    e?.preventDefault()
+    if (isQM) return // QM mode — host doesn't buzz
+    if (someoneBuzzing) return
+    const rect = buzzerRef.current?.getBoundingClientRect()
+    if (rect) {
+      const touch = e?.touches?.[0] || e
+      const ripple = {
+        id: Date.now(),
+        x: ((touch.clientX - rect.left) / rect.width) * 100,
+        y: ((touch.clientY - rect.top) / rect.height) * 100,
+      }
+      setRipples(r => [...r, ripple])
+      setTimeout(() => setRipples(r => r.filter(rr => rr.id !== ripple.id)), 600)
+    }
+    playBuzz(me?.colorId || 'blue')
+    buzzIn(gameCode, myId, me?.colorId)
+  }, [isQM, someoneBuzzing, me, gameCode, myId, playBuzz, buzzIn])
+
+  // No-QM: submit typed answer — auto-advance effect handles nextQuestion on correct
+  const handleSubmitAnswer = useCallback(async () => {
+    if (!myAnswer.trim() || answerSubmitted) return
+    setAnswerSubmitted(true)
+    const correct = answersMatch(myAnswer, currentQ?.a)
+    if (timerRef.current) clearInterval(timerRef.current)
+    await markAnswer(gameCode, game, correct)
+    if (correct) { playCorrect(); undimMusic() }
+    else { playWrong(); undimMusic(); setAnswerSubmitted(false) }
+    // nextQuestion on correct is handled by the auto-advance useEffect
+  }, [myAnswer, answerSubmitted, currentQ, gameCode, game, markAnswer, playCorrect, playWrong, undimMusic])
 
   // Subscribe
   useEffect(() => {
@@ -55,7 +120,7 @@ export default function QuizHostScreen() {
 
   // Start music
   useEffect(() => {
-    startMusic(0.4)
+    startMusic(0.05)
     return () => stopMusic()
   }, [])
 
@@ -77,6 +142,7 @@ export default function QuizHostScreen() {
     }
 
     setQuestions(qs)
+    questionsRef.current = qs
     if (qs.length > 0) {
       await loadFirstQuestion(gameCode, qs)
     }
@@ -114,6 +180,20 @@ export default function QuizHostScreen() {
       setTimerSeconds(0)
     }
   }, [buzzer])
+
+  // No-QM: auto-advance when a player's answer was accepted (answerRevealed + no buzzer)
+  // In QM mode handleMark() already calls handleNext(), so this only runs in no-QM mode.
+  useEffect(() => {
+    if (isQM) return
+    if (!game?.answerRevealed || game?.buzzer) return
+    if (autoAdvancingRef.current) return
+    autoAdvancingRef.current = true
+    const timer = setTimeout(async () => {
+      await nextQuestion(gameCode, game, questionsRef.current)
+      autoAdvancingRef.current = false
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [isQM, game?.answerRevealed, game?.buzzer, gameCode])
 
   async function handleMark(correct) {
     if (timerRef.current) clearInterval(timerRef.current)
@@ -244,8 +324,8 @@ export default function QuizHostScreen() {
           )}
         </AnimatePresence>
 
-        {/* Mark correct/wrong — only when someone buzzed */}
-        {isController && buzzedPlayer && (
+        {/* QM mode: manual ✓/✗ marking buttons */}
+        {isQM && isController && buzzedPlayer && (
           <motion.div
             className="row gap-12"
             initial={{ opacity: 0, y: 10 }}
@@ -271,6 +351,80 @@ export default function QuizHostScreen() {
               <span style={{ fontSize: '0.75rem', opacity: 0.8, marginLeft: 4 }}>-25</span>
             </motion.button>
           </motion.div>
+        )}
+
+        {/* No-QM mode: host plays along with a buzzer */}
+        {!isQM && (
+          <div className="col gap-8">
+            {/* Buzzer */}
+            <div className="buzzer-wrap" style={{ flex: 'none', minHeight: 160 }}>
+              <motion.button
+                ref={buzzerRef}
+                className={`buzzer ${someoneBuzzing && !isBuzzing ? 'buzzer-disabled' : ''} ${isBuzzing ? 'buzzer-glow' : ''}`}
+                style={{
+                  background: `radial-gradient(circle at 35% 35%, ${myColor}cc, ${myColor}88)`,
+                  '--player-color': myColor,
+                  height: 140,
+                }}
+                whileTap={!someoneBuzzing ? { scale: 0.93 } : {}}
+                onMouseDown={handleHostBuzz}
+                onTouchStart={handleHostBuzz}
+              >
+                {ripples.map(r => (
+                  <div key={r.id} className="buzzer-ripple" style={{ left: `${r.x}%`, top: `${r.y}%` }} />
+                ))}
+                <AnimatePresence mode="wait">
+                  {isBuzzing ? (
+                    <motion.div key="buzzing" className="col center" style={{ gap: 4 }}
+                      initial={{ scale: 0.8 }} animate={{ scale: 1 }} exit={{ scale: 0.8 }}>
+                      <div style={{ fontSize: '1.5rem' }}>🎤</div>
+                      <div style={{ fontSize: '0.9rem' }}>YOUR TURN!</div>
+                    </motion.div>
+                  ) : someoneBuzzing ? (
+                    <motion.div key="other" className="col center" style={{ gap: 4 }}
+                      initial={{ scale: 0.8 }} animate={{ scale: 1 }}>
+                      <div style={{ fontSize: '1.5rem' }}>🔕</div>
+                      <div style={{ fontSize: '0.85rem' }}>{buzzedPlayer?.name}</div>
+                    </motion.div>
+                  ) : (
+                    <motion.div key="ready" className="col center" style={{ gap: 4 }}
+                      initial={{ scale: 0.8 }} animate={{ scale: 1 }}>
+                      <div style={{ fontSize: '1.1rem' }}>BUZZ!</div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.button>
+            </div>
+
+            {/* Answer input when host has buzzed */}
+            <AnimatePresence>
+              {isBuzzing && (
+                <motion.div
+                  className="col gap-8"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                >
+                  <input
+                    className="input"
+                    placeholder="Type your answer..."
+                    value={myAnswer}
+                    onChange={e => setMyAnswer(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleSubmitAnswer()}
+                    autoFocus
+                    style={{ fontSize: '1.1rem', textAlign: 'center' }}
+                  />
+                  <button
+                    className="btn btn-gold btn-lg"
+                    onClick={handleSubmitAnswer}
+                    disabled={!myAnswer.trim() || answerSubmitted}
+                  >
+                    Submit Answer →
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         )}
 
         {/* Skip / Clear buzzer controls */}

@@ -71,7 +71,7 @@ function stopBgMusic() {
   if (bgGain) { bgGain.disconnect(); bgGain = null }
 }
 
-function startBgMusic(volume = 0.3) {
+function startBgMusic(volume = 0.05) {
   if (bgPlaying) return
   const ac = getCtx()
   bgGain = ac.createGain()
@@ -277,11 +277,11 @@ export function useSound() {
   }, [])
 
   const dimMusic = useCallback(() => {
-    setBgVolume(0.06, 0.1)
+    setBgVolume(0.02, 0.1)
   }, [])
 
   const undimMusic = useCallback(() => {
-    setBgVolume(0.3, 0.3)
+    setBgVolume(0.05, 0.3)
   }, [])
 
   const setMusicVolume = useCallback((v) => {
@@ -291,7 +291,7 @@ export function useSound() {
   // Stop/restart music on mute toggle
   useEffect(() => {
     if (muted && bgPlaying) setBgVolume(0, 0.1)
-    else if (!muted && bgPlaying) setBgVolume(0.3, 0.3)
+    else if (!muted && bgPlaying) setBgVolume(0.05, 0.3)
   }, [muted])
 
   return {

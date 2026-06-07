@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 const DEFAULT_SETTINGS = {
-  questionMaster: true,
+  questionMaster: false,
   answerMode: 'host-judges',
   questionsPerRound: 8,
   totalRounds: 5,
@@ -29,20 +29,40 @@ const DEFAULT_SETTINGS = {
   },
 }
 
+// ── session persistence ─────────────────────────────────────────────────────
+// Saves critical identity + navigation to localStorage so page reloads
+// (e.g. phone screen-off/browser tab refresh) restore the user to the right place.
+const SESSION_KEY = 'buzzkill_session'
+function loadSession() {
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null') } catch { return null }
+}
+function saveSession(state) {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({
+      myId: state.myId, myName: state.myName, myAvatar: state.myAvatar,
+      myRole: state.myRole, gameCode: state.gameCode,
+      // Only restore to in-game screens — home/create/join are stateless
+      screen: ['lobby','round-pick','powerup-select','quiz-host','round-over','final','vote'].includes(state.screen)
+        ? state.screen : null,
+    }))
+  } catch {}
+}
+const _saved = loadSession()
+
 export const useStore = create((set, get) => ({
-  // Local identity
-  myId: null,
-  myName: '',
-  myAvatar: null,
-  myRole: 'player', // 'host' | 'cohost' | 'player' | 'gamescreen'
+  // Local identity (restored from localStorage if available)
+  myId: _saved?.myId || null,
+  myName: _saved?.myName || '',
+  myAvatar: _saved?.myAvatar || null,
+  myRole: _saved?.myRole || 'player', // 'host' | 'cohost' | 'player' | 'gamescreen'
   myColor: '#e63946',
 
   // Game state (mirrored from Firebase)
-  gameCode: null,
-  game: null, // full Firebase game snapshot
+  gameCode: _saved?.gameCode || null,
+  game: null, // full Firebase game snapshot — reloaded from Firebase on mount
 
-  // Navigation
-  screen: 'home', // matches screen names
+  // Navigation — restore to last in-game screen if we have a gameCode
+  screen: (_saved?.gameCode && _saved?.screen) ? _saved.screen : 'home',
 
   // UI state
   toast: null,
@@ -86,3 +106,6 @@ export const useStore = create((set, get) => ({
 }))
 
 export { DEFAULT_SETTINGS }
+
+// Persist session on every state change
+useStore.subscribe(saveSession)
