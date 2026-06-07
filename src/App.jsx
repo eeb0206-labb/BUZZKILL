@@ -153,6 +153,13 @@ export default function App() {
   const gameCode = useStore(s => s.gameCode)
 
   function getScreenComponent() {
+    // gamescreen role (the big TV) always shows GameScreen once the game is in progress.
+    // We only let it through the normal routing for pre-game / lobby screens.
+    const GAMESCREEN_PASSTHROUGH = new Set(['home', 'create', 'join', 'dev-admin', 'lobby'])
+    if (myRole === 'gamescreen' && !GAMESCREEN_PASSTHROUGH.has(screen)) {
+      return GameScreen
+    }
+
     if (screen === 'quiz-host') {
       const game = useStore.getState().game
       const gameType = game?.currentGenre?.gameType

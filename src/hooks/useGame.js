@@ -659,6 +659,8 @@ export function useGame() {
       htPrompt: prompt,
       htVotes: {},
       htStartAt: Date.now(),
+      htPromptCount: 0,       // starts at 0; nextHotTakePrompt increments to 1, 2…
+      htPromptsUsed: [prompt], // track so we never repeat
     })
   }, [])
 
@@ -693,7 +695,7 @@ export function useGame() {
     const prompts = genreData?.prompts || []
     const used = game.htPromptsUsed || []
     const remaining = prompts.filter(p => !used.includes(p))
-    const roundLimit = game.settings?.questionsPerRound || 6
+    const roundLimit = game.settings?.questionsPerRound || 5
     const count = (game.htPromptCount || 0) + 1
     if (remaining.length === 0 || count >= roundLimit) {
       await update(ref(db, `games/${code}`), { state: 'round-over' })

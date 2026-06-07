@@ -72,7 +72,7 @@ export function Modal({ show, onClose, title, children, centered = false }) {
 }
 
 // ── Avatar ─────────────────────────────────────────────────────────────────────
-// Renders in priority order: avatarConfig (SVG) → src (photo) → placeholder (initial)
+// Renders in priority order: avatarConfig (SVG, with optional photo bobblehead) → src (photo) → placeholder
 export function Avatar({ src, name, colorHex, size = 40, avatarConfig }) {
   if (avatarConfig) {
     return (
@@ -85,7 +85,8 @@ export function Avatar({ src, name, colorHex, size = 40, avatarConfig }) {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
       >
-        <AvatarSvg config={avatarConfig} size={size} showFull={false}/>
+        {/* Pass photoSrc so the face photo overlays the avatar head (bobblehead effect) */}
+        <AvatarSvg config={avatarConfig} size={size} showFull={false} photoSrc={src || null}/>
       </div>
     )
   }

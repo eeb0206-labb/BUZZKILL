@@ -731,10 +731,15 @@ const HEAD_CLIP = {
   ghost:  { shape: 'circle', cx: 50, cy: 48, r: 22 },
 }
 
-// Returns { clipPathEl, imageEl } React SVG elements for overlaying a photo on the head
+// Returns defs + image elements for overlaying a photo on the head.
+// Rendered BEFORE hair so hair/accessories sit naturally on top (bobblehead effect).
+// A soft radial gradient mask fades the photo edges so it blends into the body color
+// rather than having a hard clip line — approximates background removal visually.
 function renderHeadPhoto(photoSrc, bt, clipId) {
   if (!photoSrc) return null
   const hc = HEAD_CLIP[bt] || HEAD_CLIP.human
+  const gradId = `${clipId}g`
+  const maskId = `${clipId}m`
 
   let clipShape
   let ix, iy, iw, ih
@@ -753,12 +758,24 @@ function renderHeadPhoto(photoSrc, bt, clipId) {
   return (
     <>
       <defs>
+        {/* Hard clip — keeps the image within the head silhouette */}
         <clipPath id={clipId}>{clipShape}</clipPath>
+        {/* Radial gradient that fades out at the edge — softens the background */}
+        <radialGradient id={gradId} cx="50%" cy="42%" r="50%" gradientUnits="objectBoundingBox">
+          <stop offset="50%" stopColor="white" stopOpacity="1"/>
+          <stop offset="80%" stopColor="white" stopOpacity="0.85"/>
+          <stop offset="100%" stopColor="white" stopOpacity="0"/>
+        </radialGradient>
+        {/* Mask built from the gradient — applied on top of the clip */}
+        <mask id={maskId}>
+          <rect x={ix} y={iy} width={iw} height={ih} fill={`url(#${gradId})`}/>
+        </mask>
       </defs>
       <image
         href={photoSrc}
         x={ix} y={iy} width={iw} height={ih}
         clipPath={`url(#${clipId})`}
+        mask={`url(#${maskId})`}
         preserveAspectRatio="xMidYMid slice"
       />
     </>
@@ -817,6 +834,10 @@ export default function AvatarSvg({ config, size = 80, showFull = false, photoSr
       {/* ── Clothes ───────────────────────────────────────────────────────── */}
       {renderClothes(bt, c.topStyle, c.topColor, c.bottomStyle, c.bottomColor)}
 
+      {/* ── Photo overlay — renders BEFORE hair so hair/accessories sit on top ── */}
+      {/* This gives the classic bobblehead look: real face + cartoon body + SVG hat */}
+      {photoSrc && renderHeadPhoto(photoSrc, bt, `hc-${uid}`)}
+
       {/* ── Face — only rendered when there is no photo overlay ───────────── */}
       {!photoSrc && bt !== 'robot' && (
         <>
@@ -832,11 +853,8 @@ export default function AvatarSvg({ config, size = 80, showFull = false, photoSr
         </>
       )}
 
-      {/* ── Hair ──────────────────────────────────────────────────────────── */}
+      {/* ── Hair — on top of photo (like a hat on a bobblehead) ───────────── */}
       {renderHair(c.hairStyle, c.hairColor, bt)}
-
-      {/* ── Photo overlay — clips the real photo to the head shape ────────── */}
-      {photoSrc && renderHeadPhoto(photoSrc, bt, `hc-${uid}`)}
 
       {/* ── Accessories (always on top) ───────────────────────────────────── */}
       {renderAccessory(c.accessory, bt, faceX, faceY)}

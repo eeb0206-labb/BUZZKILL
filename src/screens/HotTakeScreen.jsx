@@ -16,7 +16,7 @@ import { useSound } from '../hooks/useSound'
 import { getGenreById } from '../data/genres'
 import SettingsOverlay from '../components/SettingsOverlay'
 
-const VOTE_TIME = 20 // seconds
+const VOTE_TIME = 10 // seconds
 
 export default function HotTakeScreen() {
   const store = useStore()
@@ -39,6 +39,8 @@ export default function HotTakeScreen() {
   const votes = game?.htVotes || {}
   const players = Object.values(game?.players || {}).filter(p => p.role !== 'gamescreen')
   const genre = game?.currentGenre
+  const promptNum = (game?.htPromptCount || 0) + 1
+  const roundLimit = game?.settings?.questionsPerRound || 5
 
   const myVote = votes[myId]
   const agreeCount = Object.values(votes).filter(v => v === 'agree').length
@@ -120,7 +122,7 @@ export default function HotTakeScreen() {
     <div className="screen">
       <div className="topbar">
         <div className="round-badge">{genre?.emoji} Hot Take</div>
-        <div className="topbar-logo" style={{ color: '#e63946' }}>🔥 Hot Take</div>
+        <div className="topbar-logo" style={{ color: '#e63946' }}>🔥 {promptNum}/{roundLimit}</div>
         <div className="row gap-8">
           <MuteButton />
           <button className="btn btn-ghost btn-sm" onClick={() => setShowSettings(true)}>⚙️</button>
@@ -179,8 +181,8 @@ export default function HotTakeScreen() {
               <div style={{ fontWeight: 900, fontSize: '1.1rem', color: myVote === 'agree' ? '#e63946' : 'var(--text)' }}>
                 AGREE
               </div>
-              {phase === 'vote' && agreeCount > 0 && (
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: '#e63946' }}>{agreeCount}</div>
+              {myVote === 'agree' && (
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: '#e63946' }}>✓ Locked in</div>
               )}
             </motion.button>
 
@@ -198,8 +200,8 @@ export default function HotTakeScreen() {
               <div style={{ fontWeight: 900, fontSize: '1.1rem', color: myVote === 'disagree' ? '#4895ef' : 'var(--text)' }}>
                 DISAGREE
               </div>
-              {phase === 'vote' && disagreeCount > 0 && (
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: '#4895ef' }}>{disagreeCount}</div>
+              {myVote === 'disagree' && (
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: '#4895ef' }}>✓ Locked in</div>
               )}
             </motion.button>
           </div>
