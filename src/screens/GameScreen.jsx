@@ -1,13 +1,33 @@
-// TV/Projector display screen — shows the game state for the whole room.
-// Adapts to every game.state: lobby / round-pick / powerup-select / quiz / round-over / final / etc.
-import React, { useEffect } from 'react'
+/**
+ * GameScreen.jsx — TV/projector display. Read-only. Adapts to every game state + game type.
+ *
+ * Routing by state:
+ *   'lobby'          → LobbyView
+ *   'round-pick'     → VotingView
+ *   'powerup-select' → PowerupView
+ *   'round-over'     → RoundOverView
+ *   'final'          → FinalView
+ *   'lawyers'        → LawyersView
+ *   'quiz' (by gameType):
+ *      quiz / blitz  → QuizView
+ *      music         → MusicBangersView
+ *      draw          → DrawView
+ *      joke          → JokeOffView
+ *      hottake       → HotTakeView
+ *      fill          → FillGapView
+ *      whod          → WhodunnitView
+ */
+import React, { useEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useStore } from '../store'
 import { useGame } from '../hooks/useGame'
 import { Avatar, QRCode } from '../components/ui'
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
 const POWERUP_ICONS = { sneakPeek: '🔍', steal: '🤑', imposter: '😈', plagiarism: '📋', block: '🚫', doublePoints: '✖️' }
+
+const LAWYERS_DURATIONS  = { intro: 6, defence1: 30, prosecution1: 30, defence2: 30, prosecution2: 30, vote: 18, results: 0 }
+const LAWYERS_LABELS     = { intro: 'Get ready…', defence1: 'Defence speaks', prosecution1: 'Prosecution responds', defence2: 'Defence rebuts', prosecution2: 'Prosecution closes', vote: 'Vote now!', results: 'Results' }
+const HT_VOTE_TIME = 10
 
 function allPlayers(game) {
   return Object.values(game?.players || {})
@@ -15,20 +35,13 @@ function allPlayers(game) {
     .sort((a, b) => (b.score || 0) - (a.score || 0))
 }
 
-// ── Header ────────────────────────────────────────────────────────────────────
+// ── Shared primitives ─────────────────────────────────────────────────────────
+
 function Header({ game, label }) {
   const genre = game?.currentGenre
   return (
-    <div style={{
-      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      padding: '14px 24px', borderBottom: '1px solid rgba(255,255,255,0.07)',
-      flexShrink: 0,
-    }}>
-      <div style={{
-        fontFamily: 'var(--font-head)', fontSize: '1.6rem',
-        background: 'linear-gradient(135deg, var(--red), var(--gold))',
-        WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-      }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 24px', borderBottom: '1px solid rgba(255,255,255,0.07)', flexShrink: 0 }}>
+      <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.6rem', background: 'linear-gradient(135deg, var(--red), var(--gold))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
         ⚡ BUZZKILL
       </div>
       {genre && (
@@ -44,33 +57,19 @@ function Header({ game, label }) {
   )
 }
 
-// ── Mini score bar (shown under quiz view) ────────────────────────────────────
 function ScoreBar({ players, game }) {
   const buzzer = game?.buzzer
   const wrongList = game?.wrongAnswerers || []
   return (
-    <div style={{
-      display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap',
-      padding: '10px 20px 14px', borderTop: '1px solid rgba(255,255,255,0.06)',
-      flexShrink: 0,
-    }}>
+    <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap', padding: '10px 20px 14px', borderTop: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
       {players.map(p => {
         const isBuzzed = p.id === buzzer?.playerId
-        const isWrong = wrongList.includes(p.id)
+        const isWrong  = wrongList.includes(p.id)
         return (
-          <motion.div
-            key={p.id}
-            animate={isBuzzed
-              ? { scale: [1, 1.07, 1], boxShadow: [`0 0 0px transparent`, `0 0 24px ${p.colorHex}aa`, `0 0 10px ${p.colorHex}55`] }
-              : {}}
+          <motion.div key={p.id}
+            animate={isBuzzed ? { scale: [1, 1.07, 1], boxShadow: [`0 0 0px transparent`, `0 0 24px ${p.colorHex}aa`, `0 0 10px ${p.colorHex}55`] } : {}}
             transition={{ duration: 0.8, repeat: isBuzzed ? Infinity : 0 }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 7,
-              padding: '6px 12px', borderRadius: 10,
-              background: isBuzzed ? `${p.colorHex}1a` : 'var(--surface)',
-              border: `1.5px solid ${isBuzzed ? p.colorHex : isWrong ? 'rgba(230,57,70,0.5)' : p.colorHex + '44'}`,
-              opacity: isWrong && !isBuzzed ? 0.45 : 1,
-            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 12px', borderRadius: 10, background: isBuzzed ? `${p.colorHex}1a` : 'var(--surface)', border: `1.5px solid ${isBuzzed ? p.colorHex : isWrong ? 'rgba(230,57,70,0.5)' : p.colorHex + '44'}`, opacity: isWrong && !isBuzzed ? 0.45 : 1 }}
           >
             <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={30} />
             <div>
@@ -86,68 +85,35 @@ function ScoreBar({ players, game }) {
   )
 }
 
-// ── Full leaderboard ──────────────────────────────────────────────────────────
 function Leaderboard({ players, game, title, showPowerups = false }) {
   const medals = ['🥇', '🥈', '🥉']
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, padding: '16px 24px', overflow: 'auto' }}>
-      {title && (
-        <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.2rem', textAlign: 'center', marginBottom: 6 }}>
-          {title}
-        </div>
-      )}
+      {title && <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.2rem', textAlign: 'center', marginBottom: 6 }}>{title}</div>}
       {players.map((p, i) => {
         const hasDbl = game?.powerupRound?.[p.id]
         const pups = Object.entries(p.powerups || {}).filter(([, c]) => c > 0)
         return (
-          <motion.div
-            key={p.id}
-            initial={{ opacity: 0, x: -16 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: i * 0.05 }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              background: 'var(--surface)',
-              border: `1.5px solid ${i === 0 ? 'rgba(244,208,63,0.4)' : 'var(--border)'}`,
-              borderRadius: 12, padding: '10px 14px',
-            }}
+          <motion.div key={p.id} initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--surface)', border: `1.5px solid ${i === 0 ? 'rgba(244,208,63,0.4)' : 'var(--border)'}`, borderRadius: 12, padding: '10px 14px' }}
           >
-            <div style={{ fontSize: '1rem', width: 24, textAlign: 'center', flexShrink: 0, color: 'var(--text3)' }}>
-              {medals[i] || `${i + 1}`}
-            </div>
+            <div style={{ fontSize: '1rem', width: 24, textAlign: 'center', flexShrink: 0, color: 'var(--text3)' }}>{medals[i] || `${i + 1}`}</div>
             <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={40} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {p.name}
-              </div>
+              <div style={{ fontWeight: 700, fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
               {showPowerups && pups.length > 0 && (
                 <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap' }}>
-                  {pups.map(([key, count]) => (
-                    <span key={key} style={{ fontSize: '0.7rem', background: 'rgba(255,255,255,0.07)', borderRadius: 4, padding: '1px 5px' }}>
-                      {POWERUP_ICONS[key] || '⚡'} ×{count}
-                    </span>
-                  ))}
+                  {pups.map(([key, count]) => <span key={key} style={{ fontSize: '0.7rem', background: 'rgba(255,255,255,0.07)', borderRadius: 4, padding: '1px 5px' }}>{POWERUP_ICONS[key] || '⚡'} ×{count}</span>)}
                 </div>
               )}
             </div>
             <div style={{ textAlign: 'right', flexShrink: 0 }}>
-              <div style={{
-                fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '1.3rem',
-                color: i === 0 ? 'var(--gold)' : p.colorHex,
-              }}>
-                {p.score || 0}
-              </div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '1.3rem', color: i === 0 ? 'var(--gold)' : p.colorHex }}>{p.score || 0}</div>
               {typeof p.roundScore === 'number' && p.roundScore !== 0 && (
-                <div style={{ fontSize: '0.7rem', color: p.roundScore > 0 ? 'var(--green)' : 'var(--red)' }}>
-                  {p.roundScore > 0 ? '+' : ''}{p.roundScore}
-                </div>
+                <div style={{ fontSize: '0.7rem', color: p.roundScore > 0 ? 'var(--green)' : 'var(--red)' }}>{p.roundScore > 0 ? '+' : ''}{p.roundScore}</div>
               )}
             </div>
-            {hasDbl && (
-              <div style={{ fontSize: '0.75rem', color: 'var(--gold)', background: 'rgba(244,208,63,0.12)', borderRadius: 6, padding: '2px 5px', fontWeight: 700 }}>
-                ✖️×2
-              </div>
-            )}
+            {hasDbl && <div style={{ fontSize: '0.75rem', color: 'var(--gold)', background: 'rgba(244,208,63,0.12)', borderRadius: 6, padding: '2px 5px', fontWeight: 700 }}>✖️×2</div>}
           </motion.div>
         )
       })}
@@ -155,44 +121,66 @@ function Leaderboard({ players, game, title, showPowerups = false }) {
   )
 }
 
+// ── BuzzOverlay — reused by quiz + music bangers ──────────────────────────────
+function BuzzOverlay({ buzzedPlayer, buzzer }) {
+  if (!buzzedPlayer) return null
+  return (
+    <AnimatePresence>
+      <motion.div
+        key={buzzer?.playerId + (buzzer?.timestamp || 0)}
+        initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }}
+        transition={{ type: 'spring', stiffness: 420, damping: 26 }}
+        style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${buzzedPlayer.colorHex}14`, backdropFilter: 'blur(6px)', zIndex: 10 }}
+      >
+        <motion.div
+          animate={{ boxShadow: [`0 0 0px ${buzzedPlayer.colorHex}00`, `0 0 80px ${buzzedPlayer.colorHex}88`, `0 0 40px ${buzzedPlayer.colorHex}44`] }}
+          transition={{ duration: 1.4, repeat: Infinity }}
+          style={{ background: 'var(--bg)', border: `3px solid ${buzzedPlayer.colorHex}`, borderRadius: 24, padding: '36px 52px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, minWidth: 280 }}
+        >
+          <Avatar src={buzzedPlayer.avatar} name={buzzedPlayer.name} colorHex={buzzedPlayer.colorHex} size={100} />
+          <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', color: buzzedPlayer.colorHex, lineHeight: 1 }}>{buzzedPlayer.name}</div>
+          <div style={{ fontSize: '0.95rem', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.14em' }}>🔔 is answering…</div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  )
+}
+
 // ── QUIZ VIEW ─────────────────────────────────────────────────────────────────
 function QuizView({ game, players }) {
-  const currentQ = game?.currentQ
-  const buzzer = game?.buzzer
+  const currentQ   = game?.currentQ
+  const buzzer     = game?.buzzer
   const buzzedPlayer = buzzer ? game?.players?.[buzzer.playerId] : null
-  const wrongList = game?.wrongAnswerers || []
-  const isQM = game?.settings?.questionMaster
+  const wrongList  = game?.wrongAnswerers || []
+  const isQM       = game?.settings?.questionMaster
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '20px 32px', gap: 16, position: 'relative', overflow: 'hidden' }}>
         {currentQ ? (
-          <motion.div
-            key={game?.currentQIndex}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-            style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 20, padding: '28px 36px', textAlign: 'center' }}
-          >
-            <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(1.2rem, 3vw, 2.2rem)', lineHeight: 1.35 }}>
-              {currentQ.q}
-            </div>
+          <motion.div key={game?.currentQIndex} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 20, padding: '28px 36px', textAlign: 'center' }}>
+            <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(1.2rem, 3vw, 2.2rem)', lineHeight: 1.35 }}>{currentQ.q}</div>
             <AnimatePresence>
-              {currentQ.hint && (wrongList.length > 0 || isQM) && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                  style={{ marginTop: 14, color: 'var(--gold)', fontSize: '1rem', overflow: 'hidden' }}
-                >
+              {wrongList.length > 0 && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                  style={{ marginTop: 10, color: 'var(--gold)', fontWeight: 700, fontSize: '0.9rem', overflow: 'hidden' }}>
+                  🔥 Pot: {100 + (game?.potAmount || 0)} pts
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <AnimatePresence>
+              {currentQ.hint && wrongList.length > 0 && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                  style={{ marginTop: 6, color: 'var(--text2)', fontSize: '0.9rem', overflow: 'hidden' }}>
                   💡 {currentQ.hint}
                 </motion.div>
               )}
             </AnimatePresence>
             <AnimatePresence>
               {game?.answerRevealed && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }}
-                  style={{ marginTop: 18, background: 'rgba(87,204,153,0.1)', border: '1px solid rgba(87,204,153,0.35)', borderRadius: 10, padding: '10px 18px', color: 'var(--green)', fontSize: '1.2rem', fontWeight: 700 }}
-                >
+                <motion.div initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }}
+                  style={{ marginTop: 18, background: 'rgba(87,204,153,0.1)', border: '1px solid rgba(87,204,153,0.35)', borderRadius: 10, padding: '10px 18px', color: 'var(--green)', fontSize: '1.2rem', fontWeight: 700 }}>
                   ✓ {currentQ.a}
                 </motion.div>
               )}
@@ -201,103 +189,1249 @@ function QuizView({ game, players }) {
         ) : (
           <div style={{ textAlign: 'center', color: 'var(--text3)' }}>
             <div className="loading-dots"><span /><span /><span /></div>
-            <div style={{ marginTop: 10, fontSize: '0.9rem' }}>Loading question...</div>
+            <div style={{ marginTop: 10, fontSize: '0.9rem' }}>Loading question…</div>
           </div>
         )}
-
         <div style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text3)' }}>
           Q {(game?.currentQIndex || 0) + 1}{game?.settings?.questionsPerRound ? ` / ${game.settings.questionsPerRound}` : ''}
         </div>
-
         {wrongList.length > 0 && (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '0.72rem', color: 'var(--text3)' }}>Got it wrong:</span>
-            {wrongList.map(pid => {
-              const p = game?.players?.[pid]
-              if (!p) return null
-              return (
-                <span key={pid} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: 'rgba(230,57,70,0.1)', borderRadius: 20, fontSize: '0.8rem' }}>
-                  <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={16} />
-                  {p.name}
-                </span>
-              )
-            })}
+            {wrongList.map(pid => { const p = game?.players?.[pid]; return p ? (
+              <span key={pid} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: 'rgba(230,57,70,0.1)', borderRadius: 20, fontSize: '0.8rem' }}>
+                <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={16} />{p.name}
+              </span>
+            ) : null })}
           </div>
         )}
+        <BuzzOverlay buzzedPlayer={buzzedPlayer} buzzer={buzzer} />
+      </div>
+      <ScoreBar players={players} game={game} />
+    </div>
+  )
+}
 
-        {/* ── BIG BUZZ-IN OVERLAY ─────────────────────────────────────────── */}
+// ── MUSIC BANGERS VIEW ────────────────────────────────────────────────────────
+function MusicBangersView({ game, players }) {
+  const currentQ     = game?.currentQ
+  const buzzer       = game?.buzzer
+  const buzzedPlayer = buzzer ? game?.players?.[buzzer.playerId] : null
+  const wrongList    = game?.wrongAnswerers || []
+  const qIndex       = game?.currentQIndex || 0
+  const totalQ       = game?.settings?.questionsPerRound || 8
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '24px 32px', gap: 20, position: 'relative', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', gap: 5, height: 60, alignItems: 'flex-end' }}>
+          {[...Array(16)].map((_, i) => (
+            <motion.div key={i} style={{ width: 8, borderRadius: 4, background: '#f72585' }}
+              animate={{ height: [`${20 + Math.random() * 15}%`, `${45 + Math.random() * 55}%`, `${20 + Math.random() * 15}%`] }}
+              transition={{ repeat: Infinity, duration: 0.45 + Math.random() * 0.45, delay: i * 0.04, ease: 'easeInOut' }}
+            />
+          ))}
+        </div>
+        <motion.div key={qIndex} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: 'spring', stiffness: 280, damping: 26 }} style={{ textAlign: 'center' }}>
+          <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(2rem, 5vw, 3.5rem)', color: '#f72585' }}>🎵 Name this tune!</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1rem', color: 'var(--text3)', marginTop: 8 }}>Q{qIndex + 1} / {totalQ} — host is playing the clip</div>
+        </motion.div>
         <AnimatePresence>
-          {buzzedPlayer && (
-            <motion.div
-              key={buzzer.playerId + (buzzer.timestamp || 0)}
-              initial={{ opacity: 0, scale: 0.4 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              transition={{ type: 'spring', stiffness: 420, damping: 26 }}
-              style={{
-                position: 'absolute', inset: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: `${buzzedPlayer.colorHex}14`, backdropFilter: 'blur(6px)',
-                borderRadius: 20, zIndex: 10,
-              }}
-            >
-              <motion.div
-                animate={{ boxShadow: [`0 0 0px ${buzzedPlayer.colorHex}00`, `0 0 80px ${buzzedPlayer.colorHex}88`, `0 0 40px ${buzzedPlayer.colorHex}44`] }}
-                transition={{ duration: 1.4, repeat: Infinity }}
-                style={{ background: 'var(--bg)', border: `3px solid ${buzzedPlayer.colorHex}`, borderRadius: 24, padding: '36px 52px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, minWidth: 280 }}
-              >
-                <Avatar src={buzzedPlayer.avatar} name={buzzedPlayer.name} colorHex={buzzedPlayer.colorHex} size={100} />
-                <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', color: buzzedPlayer.colorHex, lineHeight: 1 }}>
-                  {buzzedPlayer.name}
-                </div>
-                <div style={{ fontSize: '0.95rem', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.14em', textAlign: 'center' }}>
-                  🔔 is answering...
-                  {buzzer.forcedBy && (
-                    <div style={{ color: 'var(--text3)', fontSize: '0.78rem', marginTop: 4, textTransform: 'none', letterSpacing: 0 }}>
-                      forced by {game?.players?.[buzzer.forcedBy]?.name}
-                    </div>
-                  )}
-                </div>
-              </motion.div>
+          {game?.answerRevealed && currentQ && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+              style={{ background: 'rgba(247,37,133,0.1)', border: '1.5px solid rgba(247,37,133,0.4)', borderRadius: 14, padding: '14px 28px', textAlign: 'center' }}>
+              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f72585' }}>🎵 {currentQ.a}</div>
+              {currentQ.hint && <div style={{ fontSize: '0.85rem', color: 'var(--text3)', marginTop: 4 }}>({currentQ.hint})</div>}
             </motion.div>
           )}
         </AnimatePresence>
+        {wrongList.length > 0 && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text3)' }}>Wrong:</span>
+            {wrongList.map(pid => { const p = game?.players?.[pid]; return p ? (
+              <span key={pid} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: 'rgba(230,57,70,0.1)', borderRadius: 20, fontSize: '0.8rem' }}>
+                <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={16} />{p.name}
+              </span>
+            ) : null })}
+          </div>
+        )}
+        <BuzzOverlay buzzedPlayer={buzzedPlayer} buzzer={buzzer} />
       </div>
+      <ScoreBar players={players} game={game} />
+    </div>
+  )
+}
+
+// ── DRAW VIEW ─────────────────────────────────────────────────────────────────
+function DrawView({ game, players }) {
+  const rawPrompt = game?.currentQ
+  const prompt    = typeof rawPrompt === 'string' ? rawPrompt : rawPrompt?.q || '?'
+  const qIndex    = game?.currentQIndex || 0
+  const totalQ    = game?.settings?.questionsPerRound || 5
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '32px', gap: 24, overflow: 'hidden' }}>
+        <div style={{ fontFamily: 'var(--font-head)', fontSize: '1rem', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+          🎨 Round {qIndex + 1} / {totalQ}
+        </div>
+        <motion.div key={qIndex} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+          style={{ background: 'var(--surface)', border: '2px solid var(--border)', borderRadius: 24, padding: '32px 48px', textAlign: 'center', maxWidth: 600 }}>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>Draw this:</div>
+          <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(1.6rem, 4vw, 3rem)', lineHeight: 1.25 }}>{prompt}</div>
+        </motion.div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text3)', fontSize: '0.88rem' }}>
+          <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1.6 }}>✏️</motion.span>
+          Players are drawing on their phones…
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+          {players.map(p => (
+            <span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: 'var(--surface)', border: `1.5px solid ${p.colorHex}55`, fontSize: '0.82rem', fontWeight: 600 }}>
+              <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={20} />{p.name}
+            </span>
+          ))}
+        </div>
+      </div>
+      <ScoreBar players={players} game={game} />
+    </div>
+  )
+}
+
+// ── HOT TAKE VIEW ─────────────────────────────────────────────────────────────
+function HotTakeView({ game, players }) {
+  const phase     = game?.htPhase
+  const prompt    = game?.htPrompt || ''
+  const votes     = game?.htVotes || {}
+  const promptNum = (game?.htPromptCount || 0) + 1
+  const roundLimit = game?.settings?.questionsPerRound || 5
+  const [timeLeft, setTimeLeft] = useState(HT_VOTE_TIME)
+
+  useEffect(() => {
+    if (phase !== 'vote' || !game?.htStartAt) return
+    const tick = () => setTimeLeft(Math.max(0, Math.ceil(HT_VOTE_TIME - (Date.now() - game.htStartAt) / 1000)))
+    tick()
+    const t = setInterval(tick, 500)
+    return () => clearInterval(t)
+  }, [phase, game?.htStartAt])
+
+  const agreeVoters    = players.filter(p => votes[p.id] === 'agree')
+  const disagreeVoters = players.filter(p => votes[p.id] === 'disagree')
+  const pendingVoters  = players.filter(p => !votes[p.id])
+  const totalVoted     = Object.keys(votes).length
+  const majority       = agreeVoters.length >= disagreeVoters.length ? 'agree' : 'disagree'
+  const isUnanimous    = agreeVoters.length === 0 || disagreeVoters.length === 0
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '16px 24px', gap: 14, overflow: 'hidden', minHeight: 0 }}>
+        <div style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--text3)', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+          Statement {promptNum} / {roundLimit}
+        </div>
+        <motion.div key={prompt} initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+          style={{ background: 'rgba(247,37,133,0.06)', border: '1.5px solid rgba(247,37,133,0.2)', borderRadius: 16, padding: '16px 24px', textAlign: 'center', flexShrink: 0 }}>
+          <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(1rem, 2.5vw, 1.8rem)', lineHeight: 1.4 }}>"{prompt}"</div>
+        </motion.div>
+
+        {/* Vote phase — three columns */}
+        {phase === 'vote' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ flex: 1, display: 'flex', gap: 12, overflow: 'hidden', minHeight: 0 }}>
+            {/* AGREE */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, background: 'rgba(255,68,0,0.06)', border: '1.5px solid rgba(255,68,0,0.2)', borderRadius: 14, padding: '12px 14px', overflow: 'hidden', minHeight: 0 }}>
+              <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.1rem', color: '#ff4400', textAlign: 'center' }}>🔥 AGREE</div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6, overflow: 'auto' }}>
+                {agreeVoters.map(p => (
+                  <motion.div key={p.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 10px', background: 'rgba(255,68,0,0.1)', borderRadius: 10 }}>
+                    <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={26} />
+                    <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{p.name}</span>
+                  </motion.div>
+                ))}
+              </div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.8rem', fontWeight: 700, color: '#ff4400', textAlign: 'center' }}>{agreeVoters.length}</div>
+            </div>
+
+            {/* Centre — timer + pending */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, flexShrink: 0, minWidth: 72 }}>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '2rem', fontWeight: 900, color: timeLeft <= 3 ? 'var(--red)' : 'var(--text2)' }}>{timeLeft}s</div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text3)', textAlign: 'center' }}>{totalVoted}/{players.length}<br />voted</div>
+              {pendingVoters.map(p => (
+                <motion.div key={p.id} animate={{ opacity: [0.35, 1, 0.35] }} transition={{ repeat: Infinity, duration: 1.5 }}>
+                  <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={20} />
+                </motion.div>
+              ))}
+            </div>
+
+            {/* DISAGREE */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, background: 'rgba(72,149,239,0.06)', border: '1.5px solid rgba(72,149,239,0.2)', borderRadius: 14, padding: '12px 14px', overflow: 'hidden', minHeight: 0 }}>
+              <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.1rem', color: '#4895ef', textAlign: 'center' }}>❄️ DISAGREE</div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6, overflow: 'auto' }}>
+                {disagreeVoters.map(p => (
+                  <motion.div key={p.id} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 10px', background: 'rgba(72,149,239,0.1)', borderRadius: 10 }}>
+                    <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={26} />
+                    <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{p.name}</span>
+                  </motion.div>
+                ))}
+              </div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.8rem', fontWeight: 700, color: '#4895ef', textAlign: 'center' }}>{disagreeVoters.length}</div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Results */}
+        {phase === 'results' && (
+          <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 14, overflow: 'hidden', minHeight: 0 }}>
+            <div style={{ height: 24, borderRadius: 12, overflow: 'hidden', display: 'flex', background: 'var(--surface)', flexShrink: 0 }}>
+              <motion.div style={{ background: '#ff4400', display: 'flex', alignItems: 'center', justifyContent: 'center' }} initial={{ width: 0 }} animate={{ width: `${players.length > 0 ? (agreeVoters.length / players.length) * 100 : 0}%` }} transition={{ duration: 0.8 }}>
+                {agreeVoters.length > 0 && <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#fff', padding: '0 8px' }}>🔥 {agreeVoters.length}</span>}
+              </motion.div>
+              <motion.div style={{ background: '#4895ef', display: 'flex', alignItems: 'center', justifyContent: 'center' }} initial={{ width: 0 }} animate={{ width: `${players.length > 0 ? (disagreeVoters.length / players.length) * 100 : 0}%` }} transition={{ duration: 0.8, delay: 0.05 }}>
+                {disagreeVoters.length > 0 && <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#fff', padding: '0 8px' }}>❄️ {disagreeVoters.length}</span>}
+              </motion.div>
+            </div>
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
+              style={{ textAlign: 'center', padding: '12px 20px', background: majority === 'agree' ? 'rgba(255,68,0,0.08)' : 'rgba(72,149,239,0.08)', border: `1.5px solid ${majority === 'agree' ? 'rgba(255,68,0,0.3)' : 'rgba(72,149,239,0.3)'}`, borderRadius: 14 }}>
+              <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.4rem', color: majority === 'agree' ? '#ff4400' : '#4895ef' }}>
+                {majority === 'agree' ? '🔥 The room AGREES!' : '❄️ The room DISAGREES!'}
+              </div>
+              {isUnanimous && <div style={{ fontSize: '0.82rem', color: 'var(--gold)', marginTop: 4 }}>✨ Unanimous! +50 bonus pts each</div>}
+            </motion.div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', overflow: 'auto' }}>
+              {players.map((p, i) => (
+                <motion.div key={p.id} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.3 + i * 0.07 }}
+                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 12px', borderRadius: 12, background: votes[p.id] === 'agree' ? 'rgba(255,68,0,0.1)' : 'rgba(72,149,239,0.1)', border: `1.5px solid ${votes[p.id] === 'agree' ? 'rgba(255,68,0,0.3)' : 'rgba(72,149,239,0.3)'}` }}>
+                  <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={32} />
+                  <span style={{ fontWeight: 600, fontSize: '0.75rem' }}>{p.name}</span>
+                  <span style={{ fontSize: '1rem' }}>{votes[p.id] === 'agree' ? '🔥' : '❄️'}</span>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {!phase && (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: '0.9rem' }}>
+            Waiting for host to start the round…
+          </div>
+        )}
+      </div>
+      <ScoreBar players={players} game={game} />
+    </div>
+  )
+}
+
+// ── JOKE OFF VIEW ─────────────────────────────────────────────────────────────
+function JokeOffView({ game, players }) {
+  const phase      = game?.jokePhase
+  const prompt     = game?.jokePrompt || ''
+  const subs       = game?.jokeSubmissions || {}
+  const votes      = game?.jokeVotes || {}
+  const promptNum  = (game?.jokePromptCount || 0) + 1
+  const roundLimit = game?.settings?.questionsPerRound || 5
+
+  const tally = {}
+  Object.values(votes).forEach(tid => { tally[tid] = (tally[tid] || 0) + 1 })
+  const maxVotes = Math.max(...Object.values(tally), 0)
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '16px 24px', gap: 14, overflow: 'hidden', minHeight: 0 }}>
+        <div style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--text3)', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Round {promptNum} / {roundLimit}</div>
+        <motion.div key={prompt} initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+          style={{ background: 'rgba(255,174,0,0.06)', border: '1.5px solid rgba(255,174,0,0.2)', borderRadius: 16, padding: '14px 22px', textAlign: 'center', flexShrink: 0 }}>
+          <div style={{ fontSize: '0.7rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>The prompt</div>
+          <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(1rem, 2.2vw, 1.6rem)', lineHeight: 1.4 }}>{prompt}</div>
+        </motion.div>
+
+        {/* Submit phase */}
+        {(phase === 'submit' || !phase) && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, overflow: 'hidden' }}>
+            <div style={{ textAlign: 'center', color: 'var(--text2)', fontSize: '0.9rem' }}>✍️ Players are writing their jokes…</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', overflow: 'auto' }}>
+              {players.map(p => {
+                const done = !!subs[p.id]
+                return (
+                  <motion.div key={p.id} animate={done ? { scale: [1, 1.12, 1] } : {}} transition={{ duration: 0.3 }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 12, background: done ? 'rgba(87,204,153,0.1)' : 'var(--surface)', border: `1.5px solid ${done ? 'rgba(87,204,153,0.4)' : 'var(--border)'}` }}>
+                    <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={28} />
+                    <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{p.name}</span>
+                    <span style={{ fontSize: '0.9rem' }}>{done ? '✓' : '…'}</span>
+                  </motion.div>
+                )
+              })}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Vote phase — show all jokes */}
+        {phase === 'vote' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, overflow: 'auto', minHeight: 0 }}>
+            <div style={{ textAlign: 'center', color: 'var(--text2)', fontSize: '0.82rem' }}>🗳️ Voting on phones — best joke wins!</div>
+            {Object.entries(subs).map(([pid, joke]) => {
+              const p = game?.players?.[pid]
+              const vc = tally[pid] || 0
+              return (
+                <motion.div key={pid} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
+                  style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '10px 14px', borderRadius: 12, background: vc === maxVotes && vc > 0 ? 'rgba(244,208,63,0.08)' : 'var(--surface)', border: `1.5px solid ${vc === maxVotes && vc > 0 ? 'rgba(244,208,63,0.4)' : 'var(--border)'}` }}>
+                  {p && <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={28} />}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.75rem', color: p?.colorHex, marginBottom: 2 }}>{p?.name}</div>
+                    <div style={{ fontSize: '0.9rem', lineHeight: 1.4 }}>{joke}</div>
+                  </div>
+                  {vc > 0 && <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--gold)', flexShrink: 0 }}>{vc}🗳️</div>}
+                </motion.div>
+              )
+            })}
+          </motion.div>
+        )}
+
+        {/* Results */}
+        {phase === 'results' && (
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, overflow: 'auto', minHeight: 0 }}>
+            <div style={{ textAlign: 'center', fontFamily: 'var(--font-head)', fontSize: '1.1rem', color: 'var(--gold)' }}>🏆 Results</div>
+            {Object.entries(subs).sort(([a], [b]) => (tally[b] || 0) - (tally[a] || 0)).map(([pid, joke], i) => {
+              const p = game?.players?.[pid]
+              const vc = tally[pid] || 0
+              const pts = vc * 100 + (vc === maxVotes && vc > 0 ? 100 : 0)
+              return (
+                <motion.div key={pid} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
+                  style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '10px 14px', borderRadius: 12, background: i === 0 && vc > 0 ? 'rgba(244,208,63,0.1)' : 'var(--surface)', border: `1.5px solid ${i === 0 && vc > 0 ? 'rgba(244,208,63,0.4)' : 'var(--border)'}` }}>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--text3)', width: 20, flexShrink: 0 }}>#{i + 1}</div>
+                  {p && <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={28} />}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.75rem', color: p?.colorHex, marginBottom: 2 }}>{p?.name}</div>
+                    <div style={{ fontSize: '0.9rem', lineHeight: 1.4 }}>{joke}</div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>{vc} vote{vc !== 1 ? 's' : ''}</div>
+                    {pts > 0 && <div style={{ fontFamily: 'var(--font-mono)', color: 'var(--gold)', fontWeight: 700 }}>+{pts}</div>}
+                  </div>
+                </motion.div>
+              )
+            })}
+          </motion.div>
+        )}
+      </div>
+      <ScoreBar players={players} game={game} />
+    </div>
+  )
+}
+
+// ── FILL THE GAP VIEW ─────────────────────────────────────────────────────────
+function FillGapView({ game, players }) {
+  const phase      = game?.fgPhase
+  const prompt     = game?.fgPrompt || ''
+  const subs       = game?.fgSubmissions || {}
+  const votes      = game?.fgVotes || {}
+  const promptNum  = game?.fgPromptCount || 1
+  const roundLimit = game?.settings?.questionsPerRound || 5
+
+  const tally = {}
+  Object.values(votes).forEach(tid => { tally[tid] = (tally[tid] || 0) + 1 })
+  const maxVotes = Math.max(...Object.values(tally), 0)
+
+  // Highlight the blank in the prompt
+  const parts = prompt.split('___')
+  const promptDisplay = parts.length > 1
+    ? parts.reduce((acc, part, i) => {
+        if (i > 0) acc.push(<span key={`b${i}`} style={{ background: 'rgba(72,149,239,0.25)', borderBottom: '2px solid #4895ef', padding: '0 6px', borderRadius: 4, color: '#4895ef', fontWeight: 700 }}>___</span>)
+        acc.push(<span key={`p${i}`}>{part}</span>)
+        return acc
+      }, [])
+    : prompt
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '16px 24px', gap: 14, overflow: 'hidden', minHeight: 0 }}>
+        <div style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--text3)', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Round {promptNum} / {roundLimit}</div>
+        <motion.div key={prompt} initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+          style={{ background: 'rgba(72,149,239,0.06)', border: '1.5px solid rgba(72,149,239,0.2)', borderRadius: 16, padding: '14px 22px', textAlign: 'center', flexShrink: 0 }}>
+          <div style={{ fontSize: '0.7rem', color: '#4895ef', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Fill the gap</div>
+          <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(1rem, 2.2vw, 1.5rem)', lineHeight: 1.5 }}>{promptDisplay}</div>
+        </motion.div>
+
+        {(phase === 'input' || !phase) && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, overflow: 'hidden' }}>
+            <div style={{ textAlign: 'center', color: 'var(--text2)', fontSize: '0.9rem' }}>✍️ Players are filling in the gap…</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', overflow: 'auto' }}>
+              {players.map(p => {
+                const done = !!subs[p.id]
+                return (
+                  <motion.div key={p.id} animate={done ? { scale: [1, 1.12, 1] } : {}} transition={{ duration: 0.3 }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 12, background: done ? 'rgba(87,204,153,0.1)' : 'var(--surface)', border: `1.5px solid ${done ? 'rgba(87,204,153,0.4)' : 'var(--border)'}` }}>
+                    <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={28} />
+                    <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{p.name}</span>
+                    <span>{done ? '✓' : '…'}</span>
+                  </motion.div>
+                )
+              })}
+            </div>
+          </motion.div>
+        )}
+
+        {phase === 'vote' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, overflow: 'auto', minHeight: 0 }}>
+            <div style={{ textAlign: 'center', color: 'var(--text2)', fontSize: '0.82rem' }}>🗳️ Vote for the best answer!</div>
+            {Object.entries(subs).map(([pid, answer]) => {
+              const p = game?.players?.[pid]
+              const vc = tally[pid] || 0
+              return (
+                <motion.div key={pid} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
+                  style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 14px', borderRadius: 12, background: vc === maxVotes && vc > 0 ? 'rgba(244,208,63,0.08)' : 'var(--surface)', border: `1.5px solid ${vc === maxVotes && vc > 0 ? 'rgba(244,208,63,0.4)' : 'var(--border)'}` }}>
+                  {p && <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={26} />}
+                  <span style={{ flex: 1, fontFamily: 'var(--font-head)', fontSize: '1rem' }}>{answer}</span>
+                  {vc > 0 && <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--gold)', fontWeight: 700 }}>{vc}🗳️</span>}
+                </motion.div>
+              )
+            })}
+          </motion.div>
+        )}
+
+        {phase === 'results' && (
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, overflow: 'auto', minHeight: 0 }}>
+            <div style={{ textAlign: 'center', fontFamily: 'var(--font-head)', fontSize: '1.1rem', color: 'var(--gold)' }}>🏆 Results</div>
+            {Object.entries(subs).sort(([a], [b]) => (tally[b] || 0) - (tally[a] || 0)).map(([pid, answer], i) => {
+              const p = game?.players?.[pid]
+              const vc = tally[pid] || 0
+              const pts = vc * 75 + (vc === maxVotes && vc > 0 ? 100 : 0) + 25
+              return (
+                <motion.div key={pid} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
+                  style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 14px', borderRadius: 12, background: i === 0 && vc > 0 ? 'rgba(244,208,63,0.1)' : 'var(--surface)', border: `1.5px solid ${i === 0 && vc > 0 ? 'rgba(244,208,63,0.4)' : 'var(--border)'}` }}>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--text3)', width: 20 }}>#{i + 1}</div>
+                  {p && <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={26} />}
+                  <span style={{ flex: 1, fontFamily: 'var(--font-head)', fontSize: '1rem' }}>{answer}</span>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>{vc} vote{vc !== 1 ? 's' : ''}</div>
+                    <div style={{ fontFamily: 'var(--font-mono)', color: 'var(--gold)', fontWeight: 700 }}>+{pts}</div>
+                  </div>
+                </motion.div>
+              )
+            })}
+          </motion.div>
+        )}
+      </div>
+      <ScoreBar players={players} game={game} />
+    </div>
+  )
+}
+
+// ── WHODUNNIT VIEW ────────────────────────────────────────────────────────────
+function WhodunnitView({ game, players }) {
+  const phase      = game?.whodPhase
+  const question   = game?.whodPrompt || ''
+  const answers    = game?.whodAnswers || {}
+  const votes      = game?.whodVotes || {}
+  const imposterId = game?.whodImposterId
+  const imposterQ  = game?.whodImposterPrompt || ''
+  const caught     = game?.whodCaught
+  const roundNum   = game?.whodCount || 1
+  const roundLimit = game?.settings?.questionsPerRound || 3
+
+  const voteTally = {}
+  Object.values(votes).forEach(tid => { voteTally[tid] = (voteTally[tid] || 0) + 1 })
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '16px 24px', gap: 14, overflow: 'hidden', minHeight: 0 }}>
+        <div style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--text3)', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+          Case {roundNum} / {roundLimit}
+        </div>
+        <motion.div key={question} initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+          style={{ background: 'rgba(72,149,239,0.06)', border: '1.5px solid rgba(72,149,239,0.2)', borderRadius: 16, padding: '14px 22px', textAlign: 'center', flexShrink: 0 }}>
+          <div style={{ fontSize: '0.7rem', color: '#4895ef', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Everyone was asked</div>
+          <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(1rem, 2.2vw, 1.5rem)', lineHeight: 1.4 }}>"{question}"</div>
+          {phase !== 'results' && <div style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: 8 }}>🕵️ But one player secretly got a different question…</div>}
+        </motion.div>
+
+        {(phase === 'answer' || !phase) && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, overflow: 'hidden' }}>
+            <div style={{ textAlign: 'center', color: 'var(--text2)', fontSize: '0.9rem' }}>✍️ Players are writing their answers…</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', overflow: 'auto' }}>
+              {players.map(p => {
+                const done = !!answers[p.id]
+                return (
+                  <motion.div key={p.id} animate={done ? { scale: [1, 1.1, 1] } : {}} transition={{ duration: 0.3 }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 12, background: done ? 'rgba(87,204,153,0.1)' : 'var(--surface)', border: `1.5px solid ${done ? 'rgba(87,204,153,0.4)' : 'var(--border)'}` }}>
+                    <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={28} />
+                    <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{p.name}</span>
+                    <span>{done ? '✓' : '…'}</span>
+                  </motion.div>
+                )
+              })}
+            </div>
+          </motion.div>
+        )}
+
+        {phase === 'vote' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, overflow: 'auto', minHeight: 0 }}>
+            <div style={{ textAlign: 'center', color: '#4895ef', fontWeight: 700, fontSize: '0.85rem' }}>🔍 Who gave a suspicious answer? Vote on your phones!</div>
+            {Object.entries(answers).map(([pid, answer]) => {
+              const p = game?.players?.[pid]
+              const vc = voteTally[pid] || 0
+              return (
+                <motion.div key={pid} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
+                  style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 14px', borderRadius: 12, background: 'var(--surface)', border: `1.5px solid ${p?.colorHex + '44'}` }}>
+                  {p && <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={30} />}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.75rem', color: p?.colorHex, marginBottom: 2 }}>{p?.name}</div>
+                    <div style={{ fontSize: '0.92rem' }}>{answer}</div>
+                  </div>
+                  {vc > 0 && <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#4895ef' }}>{vc}🕵️</div>}
+                </motion.div>
+              )
+            })}
+          </motion.div>
+        )}
+
+        {phase === 'results' && (
+          <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, overflow: 'auto', minHeight: 0 }}>
+            {imposterId && game?.players?.[imposterId] && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+                style={{ textAlign: 'center', padding: '14px 18px', background: caught ? 'rgba(87,204,153,0.08)' : 'rgba(230,57,70,0.08)', border: `1.5px solid ${caught ? 'rgba(87,204,153,0.3)' : 'rgba(230,57,70,0.3)'}`, borderRadius: 14 }}>
+                <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.3rem', color: caught ? 'var(--green)' : 'var(--red)' }}>
+                  {caught ? '🕵️ Imposter CAUGHT!' : '😈 Imposter ESCAPED!'}
+                </div>
+                <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                  <Avatar src={game.players[imposterId].avatar} name={game.players[imposterId].name} colorHex={game.players[imposterId].colorHex} size={44} />
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontWeight: 700 }}>{game.players[imposterId].name}</div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text3)' }}>was asked: "{imposterQ}"</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text3)', marginTop: 8 }}>
+                  {caught ? 'Detectives who spotted them: +150 pts each' : `${game.players[imposterId].name} blended in perfectly: +200 pts`}
+                </div>
+              </motion.div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, overflow: 'auto' }}>
+              {Object.entries(answers).map(([pid, answer], i) => {
+                const p = game?.players?.[pid]
+                const isImp = pid === imposterId
+                return (
+                  <motion.div key={pid} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 + i * 0.07 }}
+                    style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 14px', borderRadius: 10, background: isImp ? 'rgba(230,57,70,0.08)' : 'var(--surface)', border: `1.5px solid ${isImp ? 'rgba(230,57,70,0.35)' : 'var(--border)'}` }}>
+                    {p && <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={26} />}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.75rem', color: isImp ? 'var(--red)' : p?.colorHex }}>
+                        {p?.name}{isImp ? ' 😈' : ''}
+                      </div>
+                      <div style={{ fontSize: '0.88rem' }}>{answer}</div>
+                      {isImp && <div style={{ fontSize: '0.7rem', color: 'var(--text3)' }}>Their question: "{imposterQ}"</div>}
+                    </div>
+                  </motion.div>
+                )
+              })}
+            </div>
+          </motion.div>
+        )}
+      </div>
+      <ScoreBar players={players} game={game} />
+    </div>
+  )
+}
+
+// ── TRUE OR FALSE VIEW ────────────────────────────────────────────────────────
+function TrueFalseView({ game, players }) {
+  const phase       = game?.tfPhase
+  const question    = game?.tfQuestion
+  const submissions = game?.tfSubmissions || {}
+  const count       = game?.tfCount || 1
+  const limit       = game?.settings?.questionsPerRound || 8
+  const [timeLeft, setTimeLeft] = useState(0)
+  const timerRef = useRef(null)
+  const VOTE_TIME = 15
+
+  useEffect(() => {
+    clearInterval(timerRef.current)
+    if (phase !== 'question' || !game?.tfStartAt) return
+    const tick = () => setTimeLeft(Math.max(0, Math.ceil(VOTE_TIME - (Date.now() - game.tfStartAt) / 1000)))
+    tick()
+    timerRef.current = setInterval(tick, 500)
+    return () => clearInterval(timerRef.current)
+  }, [phase, game?.tfStartAt])
+
+  const totalVoted = Object.keys(submissions).length
+  const trueVoters  = players.filter(p => submissions[p.id] === true)
+  const falseVoters = players.filter(p => submissions[p.id] === false)
+  const correctAnswer = question?.answer
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '14px 24px', gap: 12, overflow: 'hidden', minHeight: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          <span style={{ fontSize: '0.72rem', color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+            Statement {count}/{limit}
+          </span>
+          {phase === 'question' && timeLeft > 0 && (
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', fontWeight: 700, color: timeLeft <= 5 ? 'var(--red)' : '#10b981', marginLeft: 'auto' }}>
+              {timeLeft}s · {totalVoted}/{players.length} answered
+            </span>
+          )}
+        </div>
+
+        <AnimatePresence mode="wait">
+          <motion.div key={question?.statement} initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+            style={{ background: 'rgba(16,185,129,0.06)', border: '1.5px solid rgba(16,185,129,0.25)', borderRadius: 14, padding: '18px 24px', textAlign: 'center', flexShrink: 0 }}>
+            <div style={{ fontSize: '0.68rem', color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 8, fontWeight: 700 }}>
+              🤔 True or False?
+            </div>
+            <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(1rem, 2.5vw, 1.7rem)', lineHeight: 1.4 }}>
+              "{question?.statement}"
+            </div>
+          </motion.div>
+        </AnimatePresence>
+
+        {/* Vote phase — anonymous */}
+        {phase === 'question' && (
+          <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
+            {[
+              { label: '✅ TRUE',  color: '#10b981', count: trueVoters.length },
+              { label: '❌ FALSE', color: '#e63946', count: falseVoters.length },
+            ].map(({ label, color, count: c }) => (
+              <div key={label} style={{ flex: 1, background: `${color}0d`, border: `1.5px solid ${color}33`, borderRadius: 12, padding: '14px 12px', textAlign: 'center' }}>
+                <div style={{ fontFamily: 'var(--font-head)', fontSize: '1rem', color, marginBottom: 8 }}>{label}</div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.6rem', fontWeight: 700, color }}>{c}</div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text3)', marginTop: 4 }}>voted</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Reveal */}
+        {phase === 'reveal' && question && (
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+            style={{ display: 'flex', flexDirection: 'column', gap: 10, overflow: 'auto', minHeight: 0 }}>
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+              style={{ textAlign: 'center', padding: '14px 18px', borderRadius: 14, fontFamily: 'var(--font-head)', fontSize: '1.5rem',
+                background: correctAnswer ? 'rgba(16,185,129,0.1)' : 'rgba(230,57,70,0.1)',
+                border: `2px solid ${correctAnswer ? 'rgba(16,185,129,0.4)' : 'rgba(230,57,70,0.4)'}`,
+                color: correctAnswer ? '#10b981' : '#e63946',
+              }}>
+              {correctAnswer ? '✅ TRUE' : '❌ FALSE'}
+              {question.fact && (
+                <div style={{ fontSize: '0.78rem', fontFamily: 'var(--font-body)', color: 'var(--text2)', marginTop: 8, lineHeight: 1.5, fontWeight: 400 }}>
+                  {question.fact}
+                </div>
+              )}
+            </motion.div>
+            <div style={{ display: 'flex', gap: 10, overflow: 'auto', flexWrap: 'wrap', justifyContent: 'center' }}>
+              {players.map((p, i) => {
+                const sub = game?.tfSubmissions?.[p.id]
+                const correct = sub === correctAnswer
+                const noAnswer = sub === undefined
+                return (
+                  <motion.div key={p.id} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 + i * 0.06 }}
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 12px', borderRadius: 12,
+                      background: noAnswer ? 'var(--surface)' : correct ? 'rgba(16,185,129,0.1)' : 'rgba(230,57,70,0.1)',
+                      border: `1.5px solid ${noAnswer ? 'var(--border)' : correct ? 'rgba(16,185,129,0.4)' : 'rgba(230,57,70,0.4)'}` }}>
+                    <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={32} />
+                    <span style={{ fontWeight: 600, fontSize: '0.75rem' }}>{p.name}</span>
+                    <span style={{ fontSize: '0.85rem' }}>
+                      {noAnswer ? '–' : sub === true ? '✅ True' : '❌ False'}
+                    </span>
+                    {!noAnswer && (
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: correct ? '#10b981' : '#e63946', fontWeight: 700 }}>
+                        {correct ? '+100' : '-25'}
+                      </span>
+                    )}
+                  </motion.div>
+                )
+              })}
+            </div>
+          </motion.div>
+        )}
+
+        {!phase && (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)' }}>
+            Waiting for host to start…
+          </div>
+        )}
+      </div>
+      <ScoreBar players={players} game={game} />
+    </div>
+  )
+}
+
+// ── ORDERS UP! — DINER RESTAURANT SCENE (TV) ─────────────────────────────────
+
+// Distribute order items across players so each avatar "owns" some items
+function distributeItems(items, players) {
+  const n = players.length || 1
+  const buckets = players.map(() => [])
+  items.forEach((item, i) => buckets[i % n].push({ item, idx: i }))
+  return buckets
+}
+
+// Speech bubble coming from an avatar
+function SpeechBubble({ items, color, side = 'bottom', visible = true }) {
+  if (!visible || items.length === 0) return null
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.7, y: 6 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      transition={{ type: 'spring', stiffness: 340, damping: 22, delay: (items[0]?.idx || 0) * 0.07 }}
+      style={{
+        position: 'absolute',
+        bottom: '100%',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        marginBottom: 8,
+        background: color ? `${color}22` : 'rgba(30,18,8,0.92)',
+        border: `1.5px solid ${color || 'rgba(249,115,22,0.4)'}`,
+        borderRadius: 10,
+        padding: '7px 10px',
+        minWidth: 90,
+        maxWidth: 150,
+        textAlign: 'left',
+        zIndex: 10,
+        pointerEvents: 'none',
+      }}
+    >
+      {/* Tail */}
+      <div style={{
+        position: 'absolute', bottom: -8, left: '50%', transform: 'translateX(-50%)',
+        width: 0, height: 0,
+        borderLeft: '7px solid transparent', borderRight: '7px solid transparent',
+        borderTop: `8px solid ${color || 'rgba(249,115,22,0.4)'}`,
+      }} />
+      {items.map(({ item, idx }) => (
+        <div key={idx} style={{ fontSize: '0.72rem', fontWeight: 700, lineHeight: 1.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 130 }}>
+          <span style={{ color: '#f97316', fontFamily: 'var(--font-mono)', marginRight: 3 }}>{idx + 1}.</span>
+          <span style={{ color: 'var(--text)' }}>{item}</span>
+        </div>
+      ))}
+    </motion.div>
+  )
+}
+
+function OrdersUpView({ game, players }) {
+  const phase        = game?.ouPhase
+  const fullOrder    = game?.ouFullOrder  || []
+  const challenge    = game?.ouChallenge  || []
+  const correctOrder = game?.ouCorrectOrder || []
+  const label        = game?.ouLabel      || 'The Order'
+  const submissions  = game?.ouSubmissions || {}
+  const scoreMap     = game?.ouScoreMap   || {}
+  const count        = game?.ouCount      || 1
+  const limit        = game?.settings?.questionsPerRound || 5
+  const [timeLeft, setTimeLeft] = useState(0)
+  const timerRef = useRef(null)
+  const MEM_TIME   = 15
+  const ORDER_TIME = 25
+
+  useEffect(() => {
+    clearInterval(timerRef.current)
+    if (phase === 'memorize' && game?.ouStartAt) {
+      const tick = () => setTimeLeft(Math.max(0, Math.ceil(MEM_TIME   - (Date.now() - game.ouStartAt)    / 1000)))
+      tick(); timerRef.current = setInterval(tick, 500)
+    } else if (phase === 'order' && game?.ouOrderStart) {
+      const tick = () => setTimeLeft(Math.max(0, Math.ceil(ORDER_TIME - (Date.now() - game.ouOrderStart) / 1000)))
+      tick(); timerRef.current = setInterval(tick, 500)
+    }
+    return () => clearInterval(timerRef.current)
+  }, [phase, game?.ouStartAt, game?.ouOrderStart])
+
+  const totalSubmitted = Object.keys(submissions).length
+  const buckets        = distributeItems(fullOrder, players)
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+      {/* ─── TOP BAR ─────────────────────────────────────────────────────────── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '10px 20px', flexShrink: 0,
+        background: 'linear-gradient(90deg, rgba(194,65,12,0.15) 0%, transparent 100%)',
+        borderBottom: '1px solid rgba(249,115,22,0.25)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: '1.5rem' }}>🍔</span>
+          <div>
+            <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.05rem', color: '#f97316', lineHeight: 1 }}>
+              {label}
+            </div>
+            <div style={{ fontSize: '0.62rem', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginTop: 2 }}>
+              Order {count}/{limit}
+            </div>
+          </div>
+        </div>
+        {(phase === 'memorize' || phase === 'order') && (
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '2.2rem', fontWeight: 900, lineHeight: 1, color: timeLeft <= 5 ? 'var(--red)' : '#f97316' }}>
+              {timeLeft}s
+            </div>
+            <div style={{ fontSize: '0.6rem', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              {phase === 'memorize' ? 'memorise' : 'order now'}
+            </div>
+          </div>
+        )}
+        {phase === 'reveal' && (
+          <span style={{ fontFamily: 'var(--font-head)', fontSize: '1rem', color: 'var(--gold)' }}>✅ Results</span>
+        )}
+      </div>
+
+      {/* ─── MEMORIZE PHASE — Diner scene with customer avatars ──────────────── */}
+      {phase === 'memorize' && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+
+          {/* Counter scene */}
+          <div style={{
+            flex: 1, position: 'relative', overflow: 'hidden',
+            background: 'linear-gradient(180deg, rgba(20,10,4,0.6) 0%, rgba(40,18,6,0.9) 100%)',
+          }}>
+            {/* Diner wallpaper stripes */}
+            <div style={{
+              position: 'absolute', inset: 0, opacity: 0.07,
+              backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 28px, rgba(249,115,22,0.6) 28px, rgba(249,115,22,0.6) 30px)',
+            }} />
+
+            {/* Menu chalkboard — top centre */}
+            <div style={{
+              position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
+              background: 'rgba(8,22,14,0.85)', border: '2.5px solid rgba(87,204,153,0.45)',
+              borderRadius: 12, padding: '8px 18px', minWidth: 180, textAlign: 'center', zIndex: 5,
+            }}>
+              <div style={{ fontSize: '0.6rem', color: '#57cc99', textTransform: 'uppercase', letterSpacing: '0.15em', fontWeight: 700, marginBottom: 4 }}>
+                📋 Today's Order
+              </div>
+              {fullOrder.map((item, i) => (
+                <motion.div key={item}
+                  initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.1 + i * 0.07 }}
+                  style={{ display: 'flex', alignItems: 'baseline', gap: 5, padding: '2px 0' }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', color: '#57cc99', fontWeight: 700, fontSize: '0.68rem', minWidth: 16 }}>{i + 1}.</span>
+                  <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.78rem', fontWeight: 600, textAlign: 'left' }}>{item}</span>
+                </motion.div>
+              ))}
+            </div>
+
+            {/* Customers row — avatars at the counter with speech bubbles */}
+            <div style={{
+              position: 'absolute', bottom: 54, left: 0, right: 0,
+              display: 'flex', justifyContent: 'center', alignItems: 'flex-end',
+              gap: Math.max(12, Math.min(36, 200 / (players.length || 1))),
+              padding: '0 24px',
+            }}>
+              {players.map((p, pi) => (
+                <motion.div key={p.id}
+                  initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.25 + pi * 0.07 }}
+                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, position: 'relative' }}
+                >
+                  {/* Speech bubble with this player's items */}
+                  <SpeechBubble items={buckets[pi] || []} color={p.colorHex} />
+
+                  {/* Avatar */}
+                  <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={50} />
+                  <span style={{ fontSize: '0.62rem', color: 'var(--text2)', fontWeight: 700, maxWidth: 60, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {p.name}
+                  </span>
+                </motion.div>
+              ))}
+            </div>
+
+            {/* Counter bar */}
+            <div style={{
+              position: 'absolute', bottom: 0, left: 0, right: 0, height: 54,
+              background: 'linear-gradient(180deg, #7c2d12 0%, #431407 100%)',
+              borderTop: '3px solid #c2410c',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {/* Counter surface pattern */}
+              <div style={{ position: 'absolute', inset: 0, opacity: 0.15, backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.3) 0px, rgba(255,255,255,0.3) 1px, transparent 1px, transparent 60px)' }} />
+              <span style={{ fontSize: '0.6rem', color: 'rgba(249,115,22,0.5)', letterSpacing: '0.25em', textTransform: 'uppercase', fontWeight: 700 }}>
+                ─── ORDERS UP ───
+              </span>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* ─── ORDER PHASE — challenge items + customer status ─────────────────── */}
+      {phase === 'order' && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 14, padding: '16px 24px', overflow: 'hidden', minHeight: 0 }}>
+
+          <div style={{ fontFamily: 'var(--font-head)', color: 'var(--gold)', fontSize: '0.95rem', textAlign: 'center', flexShrink: 0 }}>
+            🔀 What order did these appear in the full list?
+          </div>
+
+          {/* 3 challenge items */}
+          <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+            {challenge.map((item, i) => (
+              <motion.div key={item}
+                initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: i * 0.1, type: 'spring', stiffness: 320, damping: 24 }}
+                style={{
+                  flex: 1, padding: '18px 10px', borderRadius: 14, textAlign: 'center',
+                  background: 'rgba(249,115,22,0.08)', border: '2px solid rgba(249,115,22,0.3)',
+                  fontWeight: 700, fontSize: 'clamp(0.78rem, 1.5vw, 1rem)',
+                }}>
+                {item}
+              </motion.div>
+            ))}
+          </div>
+
+          {/* Customer status row */}
+          <div style={{
+            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            gap: 16, flexWrap: 'wrap', overflow: 'auto',
+          }}>
+            {players.map((p, pi) => {
+              const done = !!submissions[p.id]
+              return (
+                <motion.div key={p.id}
+                  initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3 + pi * 0.06 }}
+                  style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
+                    padding: '10px 14px', borderRadius: 14,
+                    background: done ? 'rgba(87,204,153,0.08)' : 'rgba(249,115,22,0.05)',
+                    border: `2px solid ${done ? 'rgba(87,204,153,0.4)' : 'rgba(249,115,22,0.2)'}`,
+                    transition: 'all 0.3s',
+                  }}>
+                  <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={42} />
+                  <span style={{ fontWeight: 700, fontSize: '0.75rem' }}>{p.name}</span>
+                  <span style={{ fontSize: '0.82rem' }}>{done ? '✅ Done' : '⏳…'}</span>
+                </motion.div>
+              )
+            })}
+          </div>
+
+          <div style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--text3)', flexShrink: 0 }}>
+            {totalSubmitted}/{players.length} orders submitted
+          </div>
+        </motion.div>
+      )}
+
+      {/* ─── REVEAL PHASE ────────────────────────────────────────────────────── */}
+      {phase === 'reveal' && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          style={{ flex: 1, display: 'flex', gap: 16, padding: '14px 20px', overflow: 'hidden', minHeight: 0 }}>
+
+          {/* Correct order list */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6, overflow: 'auto', minHeight: 0 }}>
+            <div style={{ fontFamily: 'var(--font-head)', color: 'var(--green)', fontSize: '0.85rem', marginBottom: 4, flexShrink: 0 }}>
+              ✅ The correct order
+            </div>
+            {correctOrder.map((item, i) => (
+              <motion.div key={item}
+                initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.1 }}
+                style={{
+                  display: 'flex', gap: 8, alignItems: 'center',
+                  padding: '9px 12px', borderRadius: 10,
+                  background: 'rgba(87,204,153,0.08)', border: '1.5px solid rgba(87,204,153,0.3)',
+                }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--green)', minWidth: 20, fontSize: '0.82rem' }}>{i + 1}.</span>
+                <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>{item}</span>
+              </motion.div>
+            ))}
+          </div>
+
+          {/* Player score cards */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, overflow: 'auto', minHeight: 0 }}>
+            <div style={{ fontFamily: 'var(--font-head)', color: 'var(--gold)', fontSize: '0.85rem', marginBottom: 4, flexShrink: 0 }}>
+              🏆 Scores
+            </div>
+            {players.map((p, pi) => {
+              const sm  = scoreMap[p.id]
+              const sub = submissions[p.id]
+              const medal = sm?.correct === 3 ? '🎯' : sm?.correct === 2 ? '✌️' : sm?.correct === 1 ? '🤏' : '💀'
+              return (
+                <motion.div key={p.id}
+                  initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.3 + pi * 0.08 }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '8px 12px', borderRadius: 12,
+                    background: sm?.pts > 0 ? 'rgba(244,208,63,0.07)' : 'rgba(100,100,100,0.06)',
+                    border: `1.5px solid ${p.colorHex}33`,
+                  }}>
+                  <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={36} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {p.name}
+                    </div>
+                    {sub && (
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {sub.join(' → ')}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: '0.95rem' }}>{medal}</div>
+                    <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.82rem', color: sm?.pts > 0 ? 'var(--gold)' : 'var(--text3)' }}>
+                      {sm ? `+${sm.pts}` : '—'}
+                    </div>
+                  </div>
+                </motion.div>
+              )
+            })}
+          </div>
+        </motion.div>
+      )}
+
+      {!phase && (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)' }}>
+          Waiting for host to start…
+        </div>
+      )}
 
       <ScoreBar players={players} game={game} />
     </div>
   )
 }
 
-// ── POWERUP SELECT / BETWEEN-ROUNDS VIEW ────────────────────────────────────
+// ── LAWYERS COURTROOM (TV) ────────────────────────────────────────────────────
+function TVCourtroomScene({ defender, prosecutor, audience, speakingId, phase }) {
+  const isDefSpeaking  = !!speakingId && speakingId === defender?.id
+  const isProsSpeaking = !!speakingId && speakingId === prosecutor?.id
+  const isTalking      = isDefSpeaking || isProsSpeaking
+
+  return (
+    <div style={{
+      background: 'linear-gradient(180deg, rgba(18,9,4,0.55) 0%, rgba(30,14,6,0.85) 100%)',
+      border: '2px solid #5c3618', borderRadius: 16, overflow: 'hidden', position: 'relative',
+    }}>
+      {/* Wood panelling strip */}
+      <div style={{ height: 8, background: 'repeating-linear-gradient(90deg,#5c3618 0px,#5c3618 1px,#3d200a 1px,#3d200a 40px)', opacity: 0.7 }} />
+
+      {/* Header */}
+      <div style={{ textAlign: 'center', padding: '7px 0', borderBottom: '1px solid #5c361833' }}>
+        <span style={{ fontSize: '0.62rem', color: '#c9a227', letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 700 }}>⚖️ Court in Session</span>
+      </div>
+
+      {/* Jury gallery */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 12, padding: '8px 16px 7px', background: 'rgba(0,0,0,0.3)', borderBottom: '1px solid #5c361833', minHeight: 52, flexWrap: 'wrap', alignItems: 'center' }}>
+        {audience.length > 0
+          ? audience.map(p => (
+              <div key={p.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={32} />
+                <span style={{ fontSize: '0.52rem', color: '#c9a22788', maxWidth: 42, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+              </div>
+            ))
+          : <span style={{ fontSize: '0.7rem', color: '#5c3618' }}>Jury gallery</span>}
+      </div>
+
+      {/* Courtroom floor */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', padding: '14px 40px 0', minHeight: 150, background: 'linear-gradient(180deg, transparent, rgba(0,0,0,0.4) 100%)' }}>
+        {/* Defence */}
+        <motion.div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 90 }}
+          animate={{ scale: isDefSpeaking ? 1.35 : 0.8, opacity: !isTalking || isDefSpeaking ? 1 : 0.5 }}
+          transition={{ type: 'spring', stiffness: 240, damping: 22 }}>
+          {isDefSpeaking && (
+            <motion.div animate={{ scale: [1, 1.3, 1], opacity: [0.7, 1, 0.7] }} transition={{ repeat: Infinity, duration: 0.65 }} style={{ fontSize: '1.1rem' }}>🎙️</motion.div>
+          )}
+          <motion.div
+            animate={isDefSpeaking ? { filter: ['drop-shadow(0 0 6px #4895ef88)', 'drop-shadow(0 0 18px #4895efcc)', 'drop-shadow(0 0 6px #4895ef88)'] } : { filter: 'none' }}
+            transition={{ duration: 1.1, repeat: isDefSpeaking ? Infinity : 0 }}>
+            <Avatar src={defender?.avatar} name={defender?.name || '?'} colorHex="#4895ef" size={54} />
+          </motion.div>
+          <div style={{ fontWeight: 700, fontSize: '0.75rem', color: isDefSpeaking ? '#4895ef' : '#c9a22777', maxWidth: 84, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>{defender?.name || '?'}</div>
+          <div style={{ width: 70, height: 22, background: `linear-gradient(180deg,${isDefSpeaking ? '#4895ef33' : '#4a2a0d'} 0%,#2a1506 100%)`, borderRadius: '4px 4px 0 0', borderTop: `2.5px solid ${isDefSpeaking ? '#4895ef' : '#7a5230'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: '0.7rem' }}>🛡️</span>
+          </div>
+          <div style={{ fontSize: '0.52rem', color: '#c9a22755', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Defence</div>
+        </motion.div>
+
+        {/* Centre cue */}
+        <div style={{ textAlign: 'center', paddingBottom: 34, flexShrink: 0 }}>
+          {isTalking && <motion.div key={speakingId} initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} style={{ fontSize: '1.8rem' }}>🎙️</motion.div>}
+          {phase === 'vote'    && <div style={{ fontSize: '1.8rem' }}>🗳️</div>}
+          {phase === 'results' && <div style={{ fontSize: '1.8rem' }}>⚖️</div>}
+          {phase === 'intro'   && <div style={{ fontSize: '1.8rem' }}>🔔</div>}
+        </div>
+
+        {/* Prosecution */}
+        <motion.div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 90 }}
+          animate={{ scale: isProsSpeaking ? 1.35 : 0.8, opacity: !isTalking || isProsSpeaking ? 1 : 0.5 }}
+          transition={{ type: 'spring', stiffness: 240, damping: 22 }}>
+          {isProsSpeaking && (
+            <motion.div animate={{ scale: [1, 1.3, 1], opacity: [0.7, 1, 0.7] }} transition={{ repeat: Infinity, duration: 0.65 }} style={{ fontSize: '1.1rem' }}>🎙️</motion.div>
+          )}
+          <motion.div
+            animate={isProsSpeaking ? { filter: ['drop-shadow(0 0 6px #e6394688)', 'drop-shadow(0 0 18px #e63946cc)', 'drop-shadow(0 0 6px #e6394688)'] } : { filter: 'none' }}
+            transition={{ duration: 1.1, repeat: isProsSpeaking ? Infinity : 0 }}>
+            <Avatar src={prosecutor?.avatar} name={prosecutor?.name || '?'} colorHex="#e63946" size={54} />
+          </motion.div>
+          <div style={{ fontWeight: 700, fontSize: '0.75rem', color: isProsSpeaking ? '#e63946' : '#c9a22777', maxWidth: 84, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>{prosecutor?.name || '?'}</div>
+          <div style={{ width: 70, height: 22, background: `linear-gradient(180deg,${isProsSpeaking ? '#e6394633' : '#4a2a0d'} 0%,#2a1506 100%)`, borderRadius: '4px 4px 0 0', borderTop: `2.5px solid ${isProsSpeaking ? '#e63946' : '#7a5230'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: '0.7rem' }}>⚔️</span>
+          </div>
+          <div style={{ fontSize: '0.52rem', color: '#c9a22755', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Prosecution</div>
+        </motion.div>
+      </div>
+
+      {/* Floor strip */}
+      <div style={{ height: 14, background: 'repeating-linear-gradient(90deg,#3d200a 0px,#3d200a 60px,#2a1506 60px,#2a1506 61px)', marginTop: 2 }} />
+    </div>
+  )
+}
+
+// ── LAWYERS VIEW ──────────────────────────────────────────────────────────────
+function LawyersView({ game, players }) {
+  const phase      = game?.lawyersPhase || 'intro'
+  const statement  = game?.lawyersStatement || ''
+  const defenderId = game?.lawyersDefenderId
+  const prosId     = game?.lawyersProsecutorId
+  const defender   = game?.players?.[defenderId]
+  const prosecutor = game?.players?.[prosId]
+  const phaseStart = game?.lawyersPhaseStart || 0
+  const votes      = game?.lawyersVotes || {}
+  const results    = game?.lawyersPoints
+  const caseNum    = game?.lawyersRound || 1
+  const totalCases = game?.lawyersTotalRounds || 3
+  const [timeLeft, setTimeLeft] = useState(0)
+  const timerRef   = useRef(null)
+
+  useEffect(() => {
+    clearInterval(timerRef.current)
+    const dur = LAWYERS_DURATIONS[phase] || 0
+    if (dur <= 0) { setTimeLeft(0); return }
+    const tick = () => setTimeLeft(Math.max(0, Math.ceil(dur - (Date.now() - phaseStart) / 1000)))
+    tick()
+    timerRef.current = setInterval(tick, 500)
+    return () => clearInterval(timerRef.current)
+  }, [phase, phaseStart])
+
+  const totalVotes = Object.keys(votes).length
+  const eligible   = players.filter(p => p.id !== defenderId && p.id !== prosId)
+  const isDefTurn  = phase === 'defence1' || phase === 'defence2'
+  const isProsTurn = phase === 'prosecution1' || phase === 'prosecution2'
+  const isSpeech   = isDefTurn || isProsTurn
+  const speakingId = isDefTurn ? defenderId : isProsTurn ? prosId : null
+  const activeSpeaker = speakingId ? game?.players?.[speakingId] : null
+  const speakColor = isDefTurn ? '#4895ef' : isProsTurn ? '#e63946' : '#c084fc'
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px 24px', gap: 10, overflow: 'hidden', minHeight: 0 }}>
+
+        {/* Case counter + statement */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          <div style={{ fontFamily: 'var(--font-head)', fontSize: '0.8rem', color: '#c084fc', whiteSpace: 'nowrap' }}>
+            Case {caseNum}/{totalCases}
+          </div>
+          <motion.div key={statement} initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }}
+            style={{ flex: 1, background: 'rgba(192,132,252,0.06)', border: '1.5px solid rgba(192,132,252,0.22)', borderRadius: 12, padding: '9px 14px', textAlign: 'center' }}>
+            <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(0.85rem, 2vw, 1.25rem)', lineHeight: 1.4, color: '#c084fc' }}>"{statement}"</div>
+          </motion.div>
+          {isSpeech && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.5rem', fontWeight: 900, color: timeLeft <= 5 ? 'var(--red)' : speakColor, flexShrink: 0, minWidth: 44, textAlign: 'center' }}>{timeLeft}s</div>}
+        </div>
+
+        {/* Courtroom scene — takes most of the space */}
+        <AnimatePresence mode="wait">
+          <motion.div key={`case-${caseNum}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ flexShrink: 0 }}>
+            <TVCourtroomScene
+              defender={defender}
+              prosecutor={prosecutor}
+              audience={eligible}
+              speakingId={speakingId}
+              phase={phase}
+            />
+          </motion.div>
+        </AnimatePresence>
+
+        {/* Phase label */}
+        <div style={{ textAlign: 'center', fontFamily: 'var(--font-head)', fontSize: '0.88rem', color: speakColor, flexShrink: 0 }}>
+          {LAWYERS_LABELS[phase]}
+          {['defence1','prosecution1'].includes(phase) ? ' · Opening 1/2' : ['defence2','prosecution2'].includes(phase) ? ' · Rebuttal 2/2' : ''}
+        </div>
+
+        {phase === 'intro' && (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: '0.9rem', textAlign: 'center' }}>
+            The debate is about to begin.<br />Phones away — listen closely!
+          </div>
+        )}
+
+        {isSpeech && activeSpeaker && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            style={{ textAlign: 'center', color: 'var(--text3)', fontSize: '0.8rem' }}>
+            No interrupting!
+          </motion.div>
+        )}
+
+        {/* Vote phase — anonymous: only total count shown */}
+        {phase === 'vote' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, overflow: 'hidden' }}>
+            <div style={{ textAlign: 'center', color: 'var(--gold)', fontFamily: 'var(--font-head)', fontSize: '1.1rem' }}>
+              🗳️ Vote on your phones!{timeLeft > 0 ? ` · ${timeLeft}s` : ''}
+            </div>
+            <div style={{ textAlign: 'center', fontSize: '0.85rem', color: 'var(--text2)', fontWeight: 600 }}>
+              {totalVotes} / {eligible.length} voted · results hidden until everyone is done
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center', overflow: 'auto' }}>
+              {eligible.map(p => {
+                const hasVoted = !!votes[p.id]
+                return (
+                  <span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, fontSize: '0.78rem', background: hasVoted ? 'rgba(87,204,153,0.1)' : 'var(--surface)', border: `1px solid ${hasVoted ? 'rgba(87,204,153,0.35)' : 'var(--border)'}` }}>
+                    <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={16} />{p.name} {hasVoted ? '✓' : '…'}
+                  </span>
+                )
+              })}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Results — now reveal the split */}
+        {phase === 'results' && results && (
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, overflow: 'auto', minHeight: 0 }}>
+            <div style={{ height: 22, borderRadius: 11, overflow: 'hidden', display: 'flex', background: 'var(--surface)' }}>
+              <motion.div style={{ background: '#4895ef', display: 'flex', alignItems: 'center', justifyContent: 'center' }} initial={{ width: 0 }} animate={{ width: `${((results.defCount || 0) / Math.max(1, (results.defCount || 0) + (results.prosCount || 0))) * 100}%` }} transition={{ duration: 0.8 }}>
+                {(results.defCount || 0) > 0 && <span style={{ fontSize: '0.72rem', color: '#fff', padding: '0 6px' }}>🛡️ {results.defCount}</span>}
+              </motion.div>
+              <motion.div style={{ background: '#e63946', display: 'flex', alignItems: 'center', justifyContent: 'center' }} initial={{ width: 0 }} animate={{ width: `${((results.prosCount || 0) / Math.max(1, (results.defCount || 0) + (results.prosCount || 0))) * 100}%` }} transition={{ duration: 0.8, delay: 0.05 }}>
+                {(results.prosCount || 0) > 0 && <span style={{ fontSize: '0.72rem', color: '#fff', padding: '0 6px' }}>⚔️ {results.prosCount}</span>}
+              </motion.div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem' }}>
+              <span style={{ color: '#4895ef' }}>🛡️ {defender?.name} — +{results.defence || 0}pts</span>
+              <span style={{ color: '#e63946' }}>⚔️ {prosecutor?.name} — +{results.prosecution || 0}pts</span>
+            </div>
+            <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}
+              style={{ textAlign: 'center', padding: '12px 18px', background: results.majority === 'defence' ? 'rgba(72,149,239,0.1)' : 'rgba(230,57,70,0.1)', border: `1.5px solid ${results.majority === 'defence' ? 'rgba(72,149,239,0.3)' : 'rgba(230,57,70,0.3)'}`, borderRadius: 12 }}>
+              <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.2rem', color: results.majority === 'defence' ? '#4895ef' : '#e63946' }}>
+                {results.majority === 'defence' ? '🛡️ Defence wins the case!' : '⚔️ Prosecution wins the case!'}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: 4 }}>
+                Audience who voted {results.majority}: +50 pts
+                {!caseNum >= totalCases && <> · Case {caseNum}/{totalCases}</>}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </div>
+      <ScoreBar players={players} game={game} />
+    </div>
+  )
+}
+
+// ── POWERUP VIEW ──────────────────────────────────────────────────────────────
 function PowerupView({ game, players }) {
   const currentRound = game?.currentRound || 1
-  const totalRounds = game?.settings?.totalRounds || 5
+  const totalRounds  = game?.settings?.totalRounds || 5
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ textAlign: 'center', padding: '18px 24px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
-        <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.5rem', marginBottom: 4 }}>
-          ⚡ Round {currentRound} of {totalRounds}
-        </div>
-        <div style={{ color: 'var(--text3)', fontSize: '0.88rem' }}>Players are choosing their powerups...</div>
+        <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.5rem', marginBottom: 4 }}>⚡ Round {currentRound} of {totalRounds}</div>
+        <div style={{ color: 'var(--text3)', fontSize: '0.88rem' }}>Players are choosing their powerups…</div>
       </div>
       <Leaderboard players={players} game={game} title="🏆 Current Standings" showPowerups />
     </div>
   )
 }
 
-// ── ROUND OVER VIEW ──────────────────────────────────────────────────────────
+// ── ROUND OVER VIEW ───────────────────────────────────────────────────────────
 function RoundOverView({ game, players }) {
   const currentRound = game?.currentRound || 1
   const mvp = players[0]
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ textAlign: 'center', padding: '18px 24px 12px', flexShrink: 0 }}>
-        <motion.div
-          initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-          style={{ fontFamily: 'var(--font-head)', fontSize: '2rem', color: 'var(--gold)' }}
-        >
+        <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+          style={{ fontFamily: 'var(--font-head)', fontSize: '2rem', color: 'var(--gold)' }}>
           🏆 Round {currentRound} Complete!
         </motion.div>
         {mvp && (
@@ -307,47 +1441,34 @@ function RoundOverView({ game, players }) {
           </motion.div>
         )}
       </div>
-      <Leaderboard players={players} game={game} title="Overall Standings" showPowerups={false} />
+      <Leaderboard players={players} game={game} title="Overall Standings" />
     </div>
   )
 }
 
-// ── VOTE / ROUND-PICK VIEW ────────────────────────────────────────────────────
+// ── VOTING VIEW ───────────────────────────────────────────────────────────────
 function VotingView({ game, players }) {
   const dealGenres = game?.dealGenres || []
   const roundVotes = game?.roundVotes || {}
   const voteCounts = {}
   Object.values(roundVotes).forEach(gid => { voteCounts[gid] = (voteCounts[gid] || 0) + 1 })
-  const totalVoters = players.length
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 24, padding: 32, overflow: 'auto' }}>
-      <div style={{ textAlign: 'center', fontFamily: 'var(--font-head)', fontSize: '1.5rem' }}>
-        🗳️ Vote for Next Round
-      </div>
+      <div style={{ textAlign: 'center', fontFamily: 'var(--font-head)', fontSize: '1.5rem' }}>🗳️ Vote for Next Round</div>
       <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
         {dealGenres.map(genre => {
           const count = voteCounts[genre.id] || 0
-          const pct = totalVoters > 0 ? (count / totalVoters) * 100 : 0
+          const pct   = players.length > 0 ? (count / players.length) * 100 : 0
           return (
             <motion.div key={genre.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-              style={{
-                position: 'relative', overflow: 'hidden',
-                background: 'var(--surface)',
-                border: `2px solid ${count > 0 ? (genre.color || 'var(--accent)') : 'var(--border)'}`,
-                borderRadius: 16, padding: '20px 28px', textAlign: 'center', minWidth: 130,
-              }}
-            >
+              style={{ position: 'relative', overflow: 'hidden', background: 'var(--surface)', border: `2px solid ${count > 0 ? (genre.color || 'var(--accent)') : 'var(--border)'}`, borderRadius: 16, padding: '20px 28px', textAlign: 'center', minWidth: 130 }}>
               <motion.div animate={{ height: `${pct}%` }} transition={{ duration: 0.5 }}
                 style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: `${genre.color || 'var(--accent)'}1e` }} />
               <div style={{ position: 'relative', zIndex: 1 }}>
                 <div style={{ fontSize: '2.2rem', marginBottom: 6 }}>{genre.emoji}</div>
                 <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{genre.name}</div>
-                {count > 0 && (
-                  <div style={{ fontFamily: 'var(--font-mono)', color: genre.color || 'var(--accent)', marginTop: 8, fontWeight: 700, fontSize: '1.2rem' }}>
-                    {count} vote{count !== 1 ? 's' : ''}
-                  </div>
-                )}
+                {count > 0 && <div style={{ fontFamily: 'var(--font-mono)', color: genre.color || 'var(--accent)', marginTop: 8, fontWeight: 700, fontSize: '1.2rem' }}>{count} vote{count !== 1 ? 's' : ''}</div>}
               </div>
             </motion.div>
           )
@@ -357,14 +1478,8 @@ function VotingView({ game, players }) {
         {players.map(p => {
           const voted = !!roundVotes[p.id]
           return (
-            <span key={p.id} style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              padding: '4px 10px', borderRadius: 20, fontSize: '0.8rem',
-              background: voted ? 'rgba(87,204,153,0.1)' : 'var(--surface)',
-              border: `1px solid ${voted ? 'rgba(87,204,153,0.35)' : 'var(--border)'}`,
-            }}>
-              <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={18} />
-              {p.name} {voted ? '✓' : '...'}
+            <span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 20, fontSize: '0.8rem', background: voted ? 'rgba(87,204,153,0.1)' : 'var(--surface)', border: `1px solid ${voted ? 'rgba(87,204,153,0.35)' : 'var(--border)'}` }}>
+              <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={18} />{p.name} {voted ? '✓' : '…'}
             </span>
           )
         })}
@@ -376,37 +1491,27 @@ function VotingView({ game, players }) {
 // ── FINAL VIEW ────────────────────────────────────────────────────────────────
 function FinalView({ game, players }) {
   const store = useStore()
-  function handleLeave() {
-    store.setMyRole('player')
-    store.setGame(null)
-    store.setGameCode(null)
-    store.setScreen('home')
-  }
-  const top3 = players.slice(0, 3)
-  const rest = players.slice(3)
-  const podiumOrder = [top3[1], top3[0], top3[2]].filter(Boolean)
-  const HEIGHTS = [80, 120, 60]
-  const MEDALS = ['🥈', '🥇', '🥉']
+  const top3  = players.slice(0, 3)
+  const rest  = players.slice(3)
+  const podiumOrder  = [top3[1], top3[0], top3[2]].filter(Boolean)
+  const HEIGHTS      = [80, 120, 60]
+  const MEDALS       = ['🥈', '🥇', '🥉']
   const RANK_FOR_IDX = [2, 1, 3]
+
+  function handleLeave() {
+    store.setMyRole('player'); store.setGame(null); store.setGameCode(null); store.setScreen('home')
+  }
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 32, overflow: 'auto' }}>
-      <motion.div
-        initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-        transition={{ type: 'spring', stiffness: 280, damping: 20 }}
-        style={{ fontFamily: 'var(--font-head)', fontSize: '2.4rem', textAlign: 'center' }}
-      >
-        🎉 Game Over!
-      </motion.div>
+      <motion.div initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 280, damping: 20 }}
+        style={{ fontFamily: 'var(--font-head)', fontSize: '2.4rem', textAlign: 'center' }}>🎉 Game Over!</motion.div>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, justifyContent: 'center' }}>
         {podiumOrder.map((p, idx) => {
           const rank = RANK_FOR_IDX[idx]
           return (
-            <motion.div key={p.id}
-              initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.15 + idx * 0.12, type: 'spring', stiffness: 250, damping: 22 }}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}
-            >
+            <motion.div key={p.id} initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 + idx * 0.12, type: 'spring', stiffness: 250, damping: 22 }}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
               <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={rank === 1 ? 76 : 56} />
               <div style={{ fontWeight: 700, fontSize: rank === 1 ? '1.05rem' : '0.88rem', textAlign: 'center', maxWidth: 100 }}>{p.name}</div>
               <div style={{ fontFamily: 'var(--font-mono)', color: p.colorHex, fontWeight: 700, fontSize: rank === 1 ? '1.4rem' : '1.1rem' }}>{p.score || 0}</div>
@@ -429,11 +1534,8 @@ function FinalView({ game, players }) {
           ))}
         </div>
       )}
-      <motion.button
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }}
-        onClick={handleLeave}
-        style={{ marginTop: 16, padding: '10px 28px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text3)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.9rem' }}
-      >
+      <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }} onClick={handleLeave}
+        style={{ marginTop: 16, padding: '10px 28px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text3)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.9rem' }}>
         Leave Game
       </motion.button>
     </div>
@@ -443,32 +1545,21 @@ function FinalView({ game, players }) {
 // ── LOBBY VIEW ────────────────────────────────────────────────────────────────
 function LobbyView({ game }) {
   const players = Object.values(game?.players || {}).filter(p => p.role !== 'gamescreen')
-  const joinUrl = typeof window !== 'undefined' && game?.code
+  const joinUrl  = typeof window !== 'undefined' && game?.code
     ? `${window.location.origin}${window.location.pathname}?code=${game.code}`
     : ''
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 20, padding: '24px 40px', overflow: 'auto' }}>
-      {/* Code + QR side by side */}
       <div style={{ display: 'flex', gap: 32, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center', width: '100%', maxWidth: 700 }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
           <div style={{ fontSize: '0.75rem', color: 'var(--text3)', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
             Join at {typeof window !== 'undefined' ? window.location.host : 'buzzkill.app'}
           </div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'clamp(2.5rem, 6vw, 4rem)', letterSpacing: '0.22em', color: 'var(--accent)', fontWeight: 900 }}>
-            {game?.code}
-          </div>
-          <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.3rem', color: 'var(--text2)', textAlign: 'center' }}>
-            Waiting for players...
-          </div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'clamp(2.5rem, 6vw, 4rem)', letterSpacing: '0.22em', color: 'var(--accent)', fontWeight: 900 }}>{game?.code}</div>
+          <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.3rem', color: 'var(--text2)', textAlign: 'center' }}>Waiting for players…</div>
         </div>
-        {joinUrl && (
-          <div style={{ flexShrink: 0 }}>
-            <QRCode value={joinUrl} size={180} />
-          </div>
-        )}
+        {joinUrl && <div style={{ flexShrink: 0 }}><QRCode value={joinUrl} size={180} /></div>}
       </div>
-
-      {/* Player grid */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 800 }}>
         {players.map(p => (
           <motion.div key={p.id} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}
@@ -477,30 +1568,13 @@ function LobbyView({ game }) {
             <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{p.name}</div>
           </motion.div>
         ))}
-        {players.length === 0 && (
-          <div style={{ color: 'var(--text3)', fontSize: '0.9rem' }}>Scan the QR code or enter the code above to join</div>
-        )}
+        {players.length === 0 && <div style={{ color: 'var(--text3)', fontSize: '0.9rem' }}>Scan the QR code or enter the code above to join</div>}
       </div>
     </div>
   )
 }
 
-// ── GENERIC CREATIVE ROUND VIEW ───────────────────────────────────────────────
-function GenericView({ game, players }) {
-  return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ textAlign: 'center', padding: '18px 24px', flexShrink: 0, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.3rem' }}>
-          {game?.currentGenre?.emoji} {game?.currentGenre?.name || 'Game in progress...'}
-        </div>
-        <div style={{ fontSize: '0.82rem', color: 'var(--text3)', marginTop: 4 }}>Players are on their phones</div>
-      </div>
-      <Leaderboard players={players} game={game} title="🏆 Scores" showPowerups />
-    </div>
-  )
-}
-
-// ── ROOT COMPONENT ────────────────────────────────────────────────────────────
+// ── ROOT ──────────────────────────────────────────────────────────────────────
 export default function GameScreen() {
   const store = useStore()
   const { game, gameCode } = { game: store.game, gameCode: store.gameCode }
@@ -520,42 +1594,63 @@ export default function GameScreen() {
     )
   }
 
-  const state = game.state
-  const players = allPlayers(game)
+  const state    = game.state
+  const gameType = game?.currentGenre?.gameType
+  const players  = allPlayers(game)
 
+  // State label for header
   let stateLabel = ''
-  if (state === 'quiz')              stateLabel = `Q${(game.currentQIndex || 0) + 1} / ${game.settings?.questionsPerRound || '?'}`
+  if (state === 'quiz') {
+    if      (gameType === 'music')   stateLabel = `🎵 Q${(game.currentQIndex || 0) + 1}/${game.settings?.questionsPerRound || '?'}`
+    else if (gameType === 'draw')    stateLabel = `🎨 Round ${(game.currentQIndex || 0) + 1}/${game.settings?.questionsPerRound || '?'}`
+    else if (gameType === 'joke')    stateLabel = `😂 Round ${(game.jokePromptCount || 0) + 1}/${game.settings?.questionsPerRound || '?'}`
+    else if (gameType === 'hottake') stateLabel = `🔥 Statement ${(game.htPromptCount || 0) + 1}/${game.settings?.questionsPerRound || '?'}`
+    else if (gameType === 'fill')    stateLabel = `✏️ Round ${game.fgPromptCount || 1}/${game.settings?.questionsPerRound || '?'}`
+    else if (gameType === 'whod')       stateLabel = `🕵️ Case ${game.whodCount || 1}/${game.settings?.questionsPerRound || '?'}`
+    else if (gameType === 'truefalse')  stateLabel = `🤔 ${game.tfCount || 1}/${game.settings?.questionsPerRound || '?'}`
+    else if (gameType === 'ordersup')   stateLabel = `🍔 Order ${game.ouCount || 1}/${game.settings?.questionsPerRound || '?'}`
+    else stateLabel = `Q${(game.currentQIndex || 0) + 1}/${game.settings?.questionsPerRound || '?'}`
+  } else if (state === 'lawyers')        stateLabel = `⚖️ Case ${game.lawyersRound || 1}/${game.lawyersTotalRounds || 3}`
   else if (state === 'round-pick' || state === 'vote') stateLabel = 'Voting'
-  else if (state === 'powerup-select') stateLabel = 'Powerups'
-  else if (state === 'round-over')   stateLabel = 'Round Over'
-  else if (state === 'final')        stateLabel = 'Final!'
-  else if (state === 'lobby')        stateLabel = 'Lobby'
-  else                               stateLabel = state || ''
+  else if (state === 'powerup-select')   stateLabel = 'Powerups'
+  else if (state === 'round-over')       stateLabel = 'Round Over'
+  else if (state === 'final')            stateLabel = 'Final!'
+  else if (state === 'lobby')            stateLabel = 'Lobby'
+  else stateLabel = state || ''
 
-  const isVoting = state === 'round-pick' || state === 'vote'
-  const knownStates = ['quiz', 'powerup-select', 'round-over', 'round-pick', 'vote', 'final', 'lobby']
-  const isCreative = !knownStates.includes(state) && !!state
+  // AnimatePresence key: only animate on major state/gameType transitions
+  const viewKey = `${state}-${gameType || 'q'}`
+
+  function renderView() {
+    if (state === 'lobby')                                return <LobbyView game={game} />
+    if (state === 'round-pick' || state === 'vote')       return <VotingView game={game} players={players} />
+    if (state === 'powerup-select')                       return <PowerupView game={game} players={players} />
+    if (state === 'round-over')                           return <RoundOverView game={game} players={players} />
+    if (state === 'final')                                return <FinalView game={game} players={players} />
+    if (state === 'lawyers')                              return <LawyersView game={game} players={players} />
+    if (state === 'quiz') {
+      switch (gameType) {
+        case 'music':   return <MusicBangersView game={game} players={players} />
+        case 'draw':    return <DrawView game={game} players={players} />
+        case 'joke':    return <JokeOffView game={game} players={players} />
+        case 'hottake': return <HotTakeView game={game} players={players} />
+        case 'fill':       return <FillGapView game={game} players={players} />
+        case 'whod':       return <WhodunnitView game={game} players={players} />
+        case 'truefalse':  return <TrueFalseView game={game} players={players} />
+        case 'ordersup':   return <OrdersUpView game={game} players={players} />
+        default:           return <QuizView game={game} players={players} />
+      }
+    }
+    return <QuizView game={game} players={players} />
+  }
 
   return (
     <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--bg)', overflow: 'hidden' }}>
       <Header game={game} label={stateLabel} />
-
       <AnimatePresence mode="wait">
-        <motion.div
-          key={state || 'waiting'}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}
-        >
-          {state === 'lobby'           && <LobbyView game={game} />}
-          {isVoting                    && <VotingView game={game} players={players} />}
-          {state === 'powerup-select'  && <PowerupView game={game} players={players} />}
-          {state === 'quiz'            && <QuizView game={game} players={players} />}
-          {state === 'round-over'      && <RoundOverView game={game} players={players} />}
-          {state === 'final'           && <FinalView game={game} players={players} />}
-          {isCreative                  && <GenericView game={game} players={players} />}
+        <motion.div key={viewKey} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+          {renderView()}
         </motion.div>
       </AnimatePresence>
     </div>

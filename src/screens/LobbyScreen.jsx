@@ -75,32 +75,55 @@ const POWERUPS = [
 
 // ── inside joke form ─────────────────────────────────────────────────────────────
 function InsideJokeForm({ gameCode, myId, onAdded }) {
-  const [form, setForm] = useState({ label: '', category: 'incident', context: '' })
+  const [form, setForm]       = useState({ label: '', category: 'incident', context: '' })
+  // Extra state for special categories
+  const [tfAnswer, setTfAnswer]   = useState(true)   // true = TRUE, false = FALSE
+  const [tfFact, setTfFact]       = useState('')      // explanation shown on reveal
+  const [ouItems, setOuItems]     = useState([])      // items list for ordersup
+  const [ouDraft, setOuDraft]     = useState('')      // current item being typed
   const [submitting, setSubmitting] = useState(false)
   const { submitInsideJoke } = useGame()
   const setToast = useStore(s => s.setToast)
 
+  const isTF = form.category === 'truefalse'
+  const isOU = form.category === 'ordersup'
+
+  function addOuItem() {
+    const t = ouDraft.trim()
+    if (!t) return
+    setOuItems(prev => [...prev, t])
+    setOuDraft('')
+  }
+
   async function handleSubmit() {
-    if (!form.label.trim()) { setToast({ message: 'Give the joke a name', icon: '⚠️' }); return }
+    if (!form.label.trim()) { setToast({ message: isTF ? 'Enter a statement first' : isOU ? 'Give the order a name' : 'Give the joke a name', icon: '⚠️' }); return }
+    if (isOU && ouItems.length < 3) { setToast({ message: 'Add at least 3 items to the order', icon: '⚠️' }); return }
     setSubmitting(true)
-    await submitInsideJoke(gameCode, {
+    const payload = {
       label: form.label.trim(),
       category: form.category,
       context: form.context.trim(),
       submittedBy: myId,
-    })
+    }
+    if (isTF) { payload.tfAnswer = tfAnswer; payload.tfFact = tfFact.trim() }
+    if (isOU) { payload.ouItems = ouItems }
+    await submitInsideJoke(gameCode, payload)
     setForm({ label: '', category: 'incident', context: '' })
+    setTfAnswer(true); setTfFact(''); setOuItems([]); setOuDraft('')
     setSubmitting(false)
     onAdded?.()
-    setToast({ message: '🤫 Inside joke added!', icon: '✓' })
+    setToast({ message: isTF ? '🤔 True/False added!' : isOU ? '🍔 Order added!' : '🤫 Inside joke added!', icon: '✓' })
   }
 
   return (
     <div className="col gap-10">
-      <input className="input" placeholder='Name it — e.g. "The Tesco incident"'
-        value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} />
+
+      {/* Category picker — split into standard + special */}
       <div className="col gap-4">
-        {INSIDE_JOKE_CATEGORIES.map(c => (
+        <div style={{ fontSize: '0.7rem', color: 'var(--text3)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 2 }}>
+          Standard
+        </div>
+        {INSIDE_JOKE_CATEGORIES.filter(c => !c.special).map(c => (
           <div key={c.id} className="row gap-8" style={{ cursor: 'pointer', padding: '4px 0' }}
             onClick={() => setForm(f => ({ ...f, category: c.id }))}>
             <span>{c.icon}</span>
@@ -108,12 +131,103 @@ function InsideJokeForm({ gameCode, myId, onAdded }) {
             <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--border2)', background: form.category === c.id ? 'var(--accent)' : 'transparent', flexShrink: 0 }} />
           </div>
         ))}
+
+        <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+        <div style={{ fontSize: '0.7rem', color: 'var(--text3)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 2 }}>
+          Custom rounds
+        </div>
+        {INSIDE_JOKE_CATEGORIES.filter(c => c.special).map(c => (
+          <div key={c.id} className="row gap-8" style={{ cursor: 'pointer', padding: '4px 0' }}
+            onClick={() => setForm(f => ({ ...f, category: c.id, label: '' }))}>
+            <span>{c.icon}</span>
+            <span className="flex-1" style={{ fontSize: '0.88rem' }}>{c.label}</span>
+            <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--border2)', background: form.category === c.id ? 'var(--accent)' : 'transparent', flexShrink: 0 }} />
+          </div>
+        ))}
       </div>
-      <input className="input" placeholder="Context (optional) — what actually happened"
-        value={form.context} onChange={e => setForm(f => ({ ...f, context: e.target.value }))} />
+
+      {/* ── Standard category fields ─────────────────────── */}
+      {!isTF && !isOU && (
+        <>
+          <input className="input" placeholder='Name it — e.g. "The Tesco incident"'
+            value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} />
+          <input className="input" placeholder="Context (optional) — what actually happened"
+            value={form.context} onChange={e => setForm(f => ({ ...f, context: e.target.value }))} />
+        </>
+      )}
+
+      {/* ── True/False special fields ────────────────────── */}
+      {isTF && (
+        <motion.div className="col gap-10" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+          style={{ padding: '12px 14px', background: 'rgba(16,185,129,0.05)', border: '1.5px solid rgba(16,185,129,0.2)', borderRadius: 12 }}>
+          <div style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 700 }}>🤔 Write a True or False statement</div>
+          <input className="input" placeholder='e.g. "Penguins propose with pebbles"'
+            value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} />
+          <div className="col gap-4">
+            <div style={{ fontSize: '0.72rem', color: 'var(--text2)', fontWeight: 700 }}>Is this statement…</div>
+            <div className="row gap-8">
+              {[{ val: true, label: '✅ TRUE' }, { val: false, label: '❌ FALSE' }].map(({ val, label }) => (
+                <motion.button key={String(val)} className="flex-1"
+                  onClick={() => setTfAnswer(val)} whileTap={{ scale: 0.95 }}
+                  style={{
+                    padding: '10px 0', borderRadius: 10, border: `2px solid ${tfAnswer === val ? (val ? '#10b981' : '#e63946') : 'var(--border)'}`,
+                    background: tfAnswer === val ? (val ? 'rgba(16,185,129,0.12)' : 'rgba(230,57,70,0.12)') : 'var(--surface)',
+                    fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer',
+                    color: tfAnswer === val ? (val ? '#10b981' : '#e63946') : 'var(--text2)',
+                  }}>
+                  {label}
+                </motion.button>
+              ))}
+            </div>
+          </div>
+          <input className="input" placeholder="Explain it (shown after the answer — optional)"
+            value={tfFact} onChange={e => setTfFact(e.target.value)} />
+        </motion.div>
+      )}
+
+      {/* ── Orders Up! special fields ────────────────────── */}
+      {isOU && (
+        <motion.div className="col gap-10" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+          style={{ padding: '12px 14px', background: 'rgba(249,115,22,0.05)', border: '1.5px solid rgba(249,115,22,0.2)', borderRadius: 12 }}>
+          <div style={{ fontSize: '0.8rem', color: '#f97316', fontWeight: 700 }}>🍔 Build a custom order</div>
+          <input className="input" placeholder='Location / name — e.g. "At the chippy"'
+            value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} />
+
+          {/* Items added so far */}
+          {ouItems.length > 0 && (
+            <div className="col gap-4">
+              {ouItems.map((item, i) => (
+                <div key={i} className="row gap-8" style={{ padding: '6px 10px', background: 'rgba(249,115,22,0.07)', borderRadius: 8, border: '1px solid rgba(249,115,22,0.2)' }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', color: '#f97316', fontWeight: 700, minWidth: 20 }}>{i + 1}.</span>
+                  <span className="flex-1" style={{ fontSize: '0.88rem', fontWeight: 600 }}>{item}</span>
+                  <button style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: '0.85rem' }}
+                    onClick={() => setOuItems(prev => prev.filter((_, j) => j !== i))}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add item */}
+          <div className="row gap-8">
+            <input className="input flex-1" placeholder='Add an item — e.g. "5 hotdogs"'
+              value={ouDraft} onChange={e => setOuDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addOuItem() } }} />
+            <button className="btn btn-ghost" style={{ flexShrink: 0 }} onClick={addOuItem} disabled={!ouDraft.trim()}>
+              + Add
+            </button>
+          </div>
+
+          {ouItems.length < 3 && (
+            <div style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>
+              Add at least 3 items · {ouItems.length}/3 minimum
+            </div>
+          )}
+        </motion.div>
+      )}
+
       <button className="btn btn-gold btn-block" onClick={handleSubmit}
-        disabled={submitting || !form.label.trim()}>
-        {submitting ? '...' : 'Add Joke ✓'}
+        disabled={submitting || !form.label.trim() || (isOU && ouItems.length < 3)}>
+        {submitting ? '...' : isTF ? 'Add Statement ✓' : isOU ? 'Add Order ✓' : 'Add Joke ✓'}
       </button>
     </div>
   )
@@ -163,6 +277,8 @@ function ProfileModalContent({ profileMode, setProfileMode, profileName, setProf
             <AvatarCreator
               config={profileAvatarConfig}
               onChange={setProfileAvatarConfig}
+              photoSrc={profilePhoto}
+              onPhotoChange={p => { setProfilePhoto(p); setProfilePhotoChanged(true) }}
             />
             <div className="row gap-8">
               <button className="btn btn-ghost flex-1" onClick={onCancel}>Cancel</button>
@@ -873,29 +989,14 @@ export default function LobbyScreen() {
           <div>
             <label className="input-label">Your Name</label>
             <input className="input" value={profileName} onChange={e => setProfileName(e.target.value)}
-              maxLength={20} placeholder="Display name" autoFocus />
+              maxLength={20} placeholder="Display name" />
           </div>
-          <div>
-            <label className="input-label" style={{ marginBottom: 10 }}>Profile Photo</label>
-            {profilePhoto && (
-              <div className="col center" style={{ gap: 8, marginBottom: 12 }}>
-                <img src={profilePhoto} alt="current"
-                  style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover' }} />
-                <button className="btn btn-ghost btn-sm" onClick={() => { setProfilePhoto(null); setProfilePhotoChanged(true) }}>Remove photo</button>
-              </div>
-            )}
-            {!profilePhoto ? (
-              <CameraCapture
-                onCapture={data => { setProfilePhoto(data); setProfilePhotoChanged(true) }}
-                onSkip={null}
-              />
-            ) : (
-              <button className="btn btn-ghost btn-sm" onClick={() => { setProfilePhoto(null); setProfilePhotoChanged(true) }}
-                style={{ alignSelf: 'flex-start' }}>
-                📷 Retake / Change
-              </button>
-            )}
-          </div>
+          <AvatarCreator
+            config={profileAvatarConfig}
+            onChange={v => { setProfileAvatarConfig(v); setProfileAvatarChanged(true) }}
+            photoSrc={profilePhoto}
+            onPhotoChange={p => { setProfilePhoto(p); setProfilePhotoChanged(true) }}
+          />
           <div className="row gap-8">
             <button className="btn btn-ghost flex-1" onClick={() => setProfileOpen(false)}>Cancel</button>
             <button className="btn btn-primary flex-1" onClick={saveProfile} disabled={profileSaving}>

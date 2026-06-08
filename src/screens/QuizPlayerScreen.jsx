@@ -332,6 +332,11 @@ export default function QuizPlayerScreen() {
                 {game.currentQ.q}
               </div>
               {/* Hint appears after someone gets it wrong */}
+              {wrongAnswerers.length > 0 && (
+                <div style={{ fontSize: '0.75rem', color: 'var(--gold)', fontWeight: 700 }}>
+                  🔥 Pot: {100 + (game?.potAmount || 0)} pts
+                </div>
+              )}
               {wrongAnswerers.length > 0 && game.currentQ.hint && (
                 <motion.div
                   className="hint-text"

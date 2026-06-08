@@ -91,9 +91,13 @@ export default function QuizHostScreen() {
   const hasDoublePoints = game?.powerupRound?.[myId]
   const myPowerups = me?.powerups || {}
 
-  // Players list: in QM mode only show scoreboard for "player" roles;
-  // in no-QM everyone (including host) is a participant
-  const allParticipants = Object.values(game?.players || {}).filter(p => p.role !== 'gamescreen')
+  // Players list: QM is excluded from participants (they mark answers, not play)
+  // In no-QM mode everyone including the host plays, so include them all
+  const allParticipants = Object.values(game?.players || {}).filter(p => {
+    if (p.role === 'gamescreen') return false
+    if (isQM && p.id === myId) return false // QM doesn't participate or earn points
+    return true
+  })
 
   // ── Reset on new question ────────────────────────────────────────────────────
   useEffect(() => {
@@ -296,9 +300,11 @@ export default function QuizHostScreen() {
           <div className="round-badge">{genre?.emoji} Q{qIndex + 1}/{totalQ}</div>
           {hasDoublePoints && <div style={{ fontSize: '0.8rem', color: 'var(--gold)' }}>✖️×2</div>}
         </div>
-        <div style={{ fontFamily: 'var(--font-head)', fontSize: '1rem', color: myColor }}>{me?.name}</div>
+        <div style={{ fontFamily: 'var(--font-head)', fontSize: '1rem', color: isQM ? 'var(--gold)' : myColor }}>
+          {isQM ? '🎤 QM' : me?.name}
+        </div>
         <div className="row gap-8">
-          <div style={{ fontFamily: 'var(--font-mono)', color: myColor, fontWeight: 700 }}>{me?.score || 0}</div>
+          {!isQM && <div style={{ fontFamily: 'var(--font-mono)', color: myColor, fontWeight: 700 }}>{me?.score || 0}</div>}
           <MuteButton />
           <button className="btn btn-ghost btn-sm" onClick={() => setShowSettings(true)}>⚙️</button>
         </div>
@@ -340,7 +346,7 @@ export default function QuizHostScreen() {
               <div className="caption">Q{qIndex + 1}</div>
               {wrongAnswerers.length > 0 && (
                 <span className="tag" style={{ background: 'rgba(244,208,63,0.1)', color: 'var(--gold)', border: '1px solid rgba(244,208,63,0.3)', fontSize: '0.65rem' }}>
-                  +50 bonus available
+                  🔥 {100 + (game?.potAmount || 0)} pts
                 </span>
               )}
             </div>
@@ -388,7 +394,9 @@ export default function QuizHostScreen() {
                 </div>
                 <div style={{ fontSize: '0.8rem', color: 'var(--text2)' }}>
                   {game?.powerupRound?.[buzzedPlayer.id] ? '✖️ Double Points · ' : ''}
-                  {wrongAnswerers.length > 0 ? 'Bonus question!' : 'Buzzed in'}
+                  {wrongAnswerers.length > 0
+                    ? `🔥 Pot: ${100 + (game?.potAmount || 0)} pts`
+                    : 'Buzzed in'}
                 </div>
               </div>
               {timerSeconds > 0 && <TimerRing seconds={timerSeconds} total={timerTotal} size={56} />}
@@ -402,7 +410,7 @@ export default function QuizHostScreen() {
             <motion.button className="btn btn-green btn-lg flex-1" whileTap={{ scale: 0.94 }} onClick={() => handleMark(true)}>
               ✓ Correct
               <span style={{ fontSize: '0.75rem', opacity: 0.8, marginLeft: 4 }}>
-                +{(100 + (wrongAnswerers.length > 0 ? 50 : 0)) * (game?.powerupRound?.[buzzer?.playerId] ? 2 : 1)}
+                +{(100 + (game?.potAmount || 0)) * (game?.powerupRound?.[buzzer?.playerId] ? 2 : 1)}
               </span>
             </motion.button>
             <motion.button className="btn btn-red btn-lg flex-1" whileTap={{ scale: 0.94 }} onClick={() => handleMark(false)}>

@@ -30,17 +30,31 @@ function generatePlayerId() {
   return `p_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
-// ── initial powerups from settings ────────────────────────────────────────────
-function buildInitialPowerups(settings) {
-  const c = settings?.powerupCounts || DEFAULT_SETTINGS.powerupCounts
-  return {
-    sneakPeek: c.sneakPeek ?? 2,
-    steal: c.steal ?? 1,
-    imposter: c.imposter ?? 2,
-    plagiarism: c.plagiarism ?? 1,
-    block: c.block ?? 1,
-    doublePoints: c.doublePoints ?? 1,
-  }
+// ── initial powerups — everyone starts with one Double Points; nothing else ──────
+function buildInitialPowerups() {
+  return { sneakPeek: 0, steal: 0, imposter: 0, plagiarism: 0, block: 0, doublePoints: 1 }
+}
+
+// Pool for random post-round deals — doublePoints is a starting gift, not in the pool
+const POWERUP_POOL = ['sneakPeek', 'steal', 'imposter', 'plagiarism', 'block']
+
+// Build a batch of Firebase updates that deals 1 random powerup to every eligible player
+// who is NOT currently in first place. First-place player(s) get nothing.
+// Also skips gamescreen roles.
+function buildDealPowerupUpdates(code, game) {
+  const players = Object.values(game.players || {}).filter(p => p.role !== 'gamescreen')
+  if (players.length === 0) return {}
+  const maxScore = Math.max(...players.map(p => p.score || 0))
+  const updates = {}
+  const dealtMap = {}
+  players.forEach(p => {
+    if ((p.score || 0) >= maxScore) return // first place — no powerup
+    const key = POWERUP_POOL[Math.floor(Math.random() * POWERUP_POOL.length)]
+    updates[`games/${code}/players/${p.id}/powerups/${key}`] = (p.powerups?.[key] || 0) + 1
+    dealtMap[p.id] = key
+  })
+  updates[`games/${code}/roundDealtPowerups`] = dealtMap
+  return updates
 }
 
 // ── color assignment ───────────────────────────────────────────────────────────
@@ -106,7 +120,7 @@ export function useGame() {
           role: 'host',
           score: 0,
           roundScore: 0,
-          powerups: buildInitialPowerups(mergedSettings),
+          powerups: buildInitialPowerups(),
           secondLifeUsed: false,
           isOnline: true,
           joinedAt: Date.now(),
@@ -147,7 +161,7 @@ export function useGame() {
       role,
       score: 0,
       roundScore: 0,
-      powerups: buildInitialPowerups(game.settings),
+      powerups: buildInitialPowerups(),
       secondLifeUsed: false,
       isOnline: true,
       joinedAt: Date.now(),
@@ -205,12 +219,14 @@ export function useGame() {
     await update(ref(db, `games/${code}/roundVotes`), { [playerId]: genreId })
   }, [])
 
-  // Lock in a genre and start round
-  const selectGenre = useCallback(async (code, genreId, genreName, genreEmoji, gameType, gameColor) => {
-    await update(ref(db, `games/${code}`), {
-      currentGenre: { id: genreId, name: genreName, emoji: genreEmoji, gameType, color: gameColor },
-      state: 'powerup-select',
-      powerupRound: {},
+  // Lock in a genre and start round — also deals 1 random powerup to each eligible player
+  const selectGenre = useCallback(async (code, game, genreId, genreName, genreEmoji, gameType, gameColor) => {
+    const powerupUpdates = game ? buildDealPowerupUpdates(code, game) : {}
+    await update(ref(db), {
+      [`games/${code}/currentGenre`]: { id: genreId, name: genreName, emoji: genreEmoji, gameType, color: gameColor },
+      [`games/${code}/state`]: 'powerup-select',
+      [`games/${code}/powerupRound`]: {},
+      ...powerupUpdates,
     })
   }, [])
 
@@ -236,18 +252,24 @@ export function useGame() {
     if (!player) return
 
     const wrongAnswerers = game.wrongAnswerers || []
-    const isBonus = !correct ? false : wrongAnswerers.length > 0
-    const hasDoublePoints = game.powerupRound?.[buzzerId]
-    const settings = game.settings || DEFAULT_SETTINGS
+    const hasDoublePoints = !!game.powerupRound?.[buzzerId]
+    // potAmount tracks accumulated penalties from wrong answers — each wrong answer
+    // adds its individual penalty (25, or 50 with double points) to the pot.
+    const potAmount = game.potAmount || 0
 
     let delta = 0
+    let newPotAmount = potAmount
     if (correct) {
-      delta = (100 + (isBonus ? 50 : 0)) * (hasDoublePoints ? 2 : 1)
+      // Winner collects the full pot (base 100 + accumulated penalties), doubled if active
+      delta = (100 + potAmount) * (hasDoublePoints ? 2 : 1)
     } else {
-      delta = -25
+      // Wrong answer: -25 normally, -50 with double points. That penalty also goes INTO the pot.
+      const penalty = hasDoublePoints ? 50 : 25
+      delta = -penalty
+      newPotAmount = potAmount + penalty
     }
 
-    // Plagiarism: if someone has this player as their target, they also score
+    // Plagiarism: if someone has this player as their target, they also score on correct answer
     const plagiarismTargets = game.plagiarismTargets || {}
     const plagiarists = Object.entries(plagiarismTargets)
       .filter(([pid, target]) => target === buzzerId && correct)
@@ -258,10 +280,9 @@ export function useGame() {
     updates[`games/${code}/players/${buzzerId}/roundScore`] = (player.roundScore || 0) + delta
 
     if (!correct) {
-      // Add to wrong answerers list
-      const newWrong = [...wrongAnswerers, buzzerId]
-      updates[`games/${code}/wrongAnswerers`] = newWrong
-      // Track the question itself for Redemption Arc
+      updates[`games/${code}/wrongAnswerers`] = [...wrongAnswerers, buzzerId]
+      updates[`games/${code}/potAmount`] = newPotAmount
+      // Track for Redemption Arc
       if (game.currentQ?.q) {
         const wrongQ = { q: game.currentQ.q, a: game.currentQ.a, hint: game.currentQ.hint || '' }
         const existingSnap = await get(ref(db, `games/${code}/playerWrongAnswers/${buzzerId}`))
@@ -276,7 +297,7 @@ export function useGame() {
     for (const pid of plagiarists) {
       const pp = game.players[pid]
       if (pp) {
-        const pdelta = 100 * (game.powerupRound?.[pid] ? 2 : 1)
+        const pdelta = (100 + potAmount) * (game.powerupRound?.[pid] ? 2 : 1)
         updates[`games/${code}/players/${pid}/score`] = (pp.score || 0) + pdelta
         updates[`games/${code}/players/${pid}/roundScore`] = (pp.roundScore || 0) + pdelta
       }
@@ -286,6 +307,7 @@ export function useGame() {
 
     if (correct) {
       updates[`games/${code}/wrongAnswerers`] = []
+      updates[`games/${code}/potAmount`] = 0
       updates[`games/${code}/answerRevealed`] = true
     }
 
@@ -315,6 +337,7 @@ export function useGame() {
         currentQIndex: nextIdx,
         buzzer: null,
         wrongAnswerers: [],
+        potAmount: 0,
         questionRevealed: false,
         answerRevealed: false,
         hintRevealed: false,
@@ -330,6 +353,7 @@ export function useGame() {
       currentQIndex: 0,
       buzzer: null,
       wrongAnswerers: [],
+      potAmount: 0,
       questionRevealed: false,
       answerRevealed: false,
       hintRevealed: false,
@@ -357,6 +381,7 @@ export function useGame() {
         [`games/${code}/currentQ`]: null,
         [`games/${code}/plagiarismTargets`]: {},
         [`games/${code}/powerupRound`]: {},
+        [`games/${code}/roundDealtPowerups`]: {},
         [`games/${code}/state`]: 'round-pick',
         [`games/${code}/dealGenres`]: null,
         [`games/${code}/roundVotes`]: {},
@@ -519,13 +544,211 @@ export function useGame() {
     return success
   }, [usePowerup])
 
+  // ── True or False ─────────────────────────────────────────────────────────────
+  // Phases: 'question' → 'reveal'. Everyone submits simultaneously (no buzzer).
+  // Correct = 100 pts (×2 if double points). Wrong = -25 (×2 if double points).
+
+  const startTrueOrFalse = useCallback(async (code, game) => {
+    const genreData = getGenreById(game.currentGenre?.id)
+    const baseQs = genreData?.questions || []
+    // Blend in inside-joke True/False questions
+    const insideJokeQs = Object.values(game.insideJokes || {})
+      .filter(j => j.category === 'truefalse' && j.tfAnswer !== undefined)
+      .map(j => ({ statement: j.label, answer: j.tfAnswer, fact: j.tfFact || '', isInsideJoke: true }))
+    const questions = [...baseQs, ...insideJokeQs]
+    if (questions.length === 0) return
+    const used = game.tfUsedIndices || []
+    const remaining = questions.map((_, i) => i).filter(i => !used.includes(i))
+    const pool = remaining.length > 0 ? remaining : questions.map((_, i) => i)
+    const idx = pool[Math.floor(Math.random() * pool.length)]
+    await update(ref(db, `games/${code}`), {
+      tfPhase: 'question',
+      tfQuestion: questions[idx],
+      tfSubmissions: {},
+      tfIndex: idx,
+      tfStartAt: Date.now(),
+      tfCount: 1,
+      tfUsedIndices: [...used, idx],
+    })
+  }, [])
+
+  const submitTFAnswer = useCallback(async (code, playerId, answer) => {
+    // answer: true | false
+    await update(ref(db, `games/${code}/tfSubmissions`), { [playerId]: answer })
+  }, [])
+
+  const revealTFResults = useCallback(async (code, game) => {
+    const correctAnswer = game.tfQuestion?.answer
+    const players = Object.values(game.players || {}).filter(p => p.role !== 'gamescreen')
+    const submissions = game.tfSubmissions || {}
+    const updates = {}
+    players.forEach(p => {
+      const sub = submissions[p.id]
+      if (sub === undefined) return // didn't answer
+      const correct = sub === correctAnswer
+      const base = correct ? 100 : -25
+      const pts = base * (game?.powerupRound?.[p.id] ? 2 : 1)
+      updates[`games/${code}/players/${p.id}/score`] = Math.max(0, (p.score || 0) + pts)
+      updates[`games/${code}/players/${p.id}/roundScore`] = (p.roundScore || 0) + pts
+    })
+    updates[`games/${code}/tfPhase`] = 'reveal'
+    await update(ref(db), updates)
+  }, [])
+
+  const nextTFQuestion = useCallback(async (code, game) => {
+    const genreData = getGenreById(game.currentGenre?.id)
+    const baseQs = genreData?.questions || []
+    const insideJokeQs = Object.values(game.insideJokes || {})
+      .filter(j => j.category === 'truefalse' && j.tfAnswer !== undefined)
+      .map(j => ({ statement: j.label, answer: j.tfAnswer, fact: j.tfFact || '', isInsideJoke: true }))
+    const questions = [...baseQs, ...insideJokeQs]
+    const roundLimit = game.settings?.questionsPerRound || 8
+    const count = (game.tfCount || 1) + 1
+    if (count > roundLimit) {
+      await update(ref(db, `games/${code}`), { state: 'round-over' }); return
+    }
+    const used = game.tfUsedIndices || []
+    const remaining = questions.map((_, i) => i).filter(i => !used.includes(i))
+    const pool = remaining.length > 0 ? remaining : questions.map((_, i) => i)
+    const idx = pool[Math.floor(Math.random() * pool.length)]
+    await update(ref(db, `games/${code}`), {
+      tfPhase: 'question',
+      tfQuestion: questions[idx],
+      tfSubmissions: {},
+      tfIndex: idx,
+      tfStartAt: Date.now(),
+      tfCount: count,
+      tfUsedIndices: [...used, idx],
+    })
+  }, [])
+
+  const endTFRound = useCallback(async (code) => {
+    await update(ref(db, `games/${code}`), { state: 'round-over' })
+  }, [])
+
+  // ── Orders Up! ─────────────────────────────────────────────────────────────────
+  // Phases: 'memorize' (show full order) → 'order' (scrambled, player arranges)
+  //         → 'reveal' (show correct + scores)
+  // All 3 correct = 150 pts, 2 = 75, 1 = 25, 0 = 0. All ×2 if double points.
+  // ouChallenge: 3 items shown scrambled. ouCorrectOrder: same 3 items in original sequence.
+
+  const startOrdersUp = useCallback(async (code, game) => {
+    const genreData = getGenreById(game.currentGenre?.id)
+    const baseOrders = genreData?.orders || []
+    // Blend in inside-joke orders (need at least 3 items)
+    const insideJokeOrders = Object.values(game.insideJokes || {})
+      .filter(j => j.category === 'ordersup' && Array.isArray(j.ouItems) && j.ouItems.length >= 3)
+      .map(j => ({ label: j.label, items: j.ouItems, isInsideJoke: true }))
+    const orders = [...baseOrders, ...insideJokeOrders]
+    if (orders.length === 0) return
+    const used = game.ouUsedOrders || []
+    const remaining = orders.filter((_, i) => !used.includes(i))
+    const pool = remaining.length > 0 ? remaining.map((_, i) => orders.indexOf(remaining[i])) : orders.map((_, i) => i)
+    const orderIdx = pool[Math.floor(Math.random() * pool.length)]
+    const order = orders[orderIdx]
+    // Pick 3 random items from the list (by index) and record their original positions
+    const allIndices = order.items.map((_, i) => i)
+    const shuffled = [...allIndices].sort(() => Math.random() - 0.5)
+    const pickedIndices = shuffled.slice(0, 3).sort((a, b) => Math.random() - 0.5) // scrambled for display
+    const correctOrderIndices = [...pickedIndices].sort((a, b) => a - b) // sorted by original position
+    const challenge = pickedIndices.map(i => order.items[i]) // scrambled items shown to players
+    const correctOrder = correctOrderIndices.map(i => order.items[i]) // correct sequence
+    await update(ref(db, `games/${code}`), {
+      ouPhase: 'memorize',
+      ouLabel: order.label,
+      ouFullOrder: order.items,
+      ouChallenge: challenge,
+      ouCorrectOrder: correctOrder,
+      ouSubmissions: {},
+      ouStartAt: Date.now(),
+      ouCount: (game.ouCount || 0) + 1,
+      ouUsedOrders: [...used, orderIdx],
+    })
+  }, [])
+
+  const submitOUAnswer = useCallback(async (code, playerId, orderedItems) => {
+    // orderedItems: array of 3 item strings in player's chosen order
+    await update(ref(db, `games/${code}/ouSubmissions`), { [playerId]: orderedItems })
+  }, [])
+
+  const advanceOUPhase = useCallback(async (code, currentPhase) => {
+    if (currentPhase === 'memorize') {
+      await update(ref(db, `games/${code}`), { ouPhase: 'order', ouOrderStart: Date.now() })
+    }
+  }, [])
+
+  const revealOUResults = useCallback(async (code, game) => {
+    const correctOrder = game.ouCorrectOrder || []
+    const players = Object.values(game.players || {}).filter(p => p.role !== 'gamescreen')
+    const submissions = game.ouSubmissions || {}
+    const updates = {}
+    const scoreMap = {}
+    players.forEach(p => {
+      const sub = submissions[p.id]
+      if (!sub || !Array.isArray(sub)) return
+      const correct = sub.filter((item, i) => item === correctOrder[i]).length
+      const base = correct === 3 ? 150 : correct === 2 ? 75 : correct === 1 ? 25 : 0
+      const pts = base * (game?.powerupRound?.[p.id] ? 2 : 1)
+      scoreMap[p.id] = { correct, pts }
+      if (pts !== 0) {
+        updates[`games/${code}/players/${p.id}/score`] = (p.score || 0) + pts
+        updates[`games/${code}/players/${p.id}/roundScore`] = (p.roundScore || 0) + pts
+      }
+    })
+    updates[`games/${code}/ouPhase`] = 'reveal'
+    updates[`games/${code}/ouScoreMap`] = scoreMap
+    await update(ref(db), updates)
+    return scoreMap
+  }, [])
+
+  const nextOUOrder = useCallback(async (code, game) => {
+    const genreData = getGenreById(game.currentGenre?.id)
+    const baseOrders = genreData?.orders || []
+    const insideJokeOrders = Object.values(game.insideJokes || {})
+      .filter(j => j.category === 'ordersup' && Array.isArray(j.ouItems) && j.ouItems.length >= 3)
+      .map(j => ({ label: j.label, items: j.ouItems, isInsideJoke: true }))
+    const orders = [...baseOrders, ...insideJokeOrders]
+    const roundLimit = game.settings?.questionsPerRound || 5
+    const count = game.ouCount || 1
+    if (count >= roundLimit) {
+      await update(ref(db, `games/${code}`), { state: 'round-over' }); return
+    }
+    const used = game.ouUsedOrders || []
+    const remaining = orders.map((_, i) => i).filter(i => !used.includes(i))
+    const pool = remaining.length > 0 ? remaining : orders.map((_, i) => i)
+    const orderIdx = pool[Math.floor(Math.random() * pool.length)]
+    const order = orders[orderIdx]
+    const allIndices = order.items.map((_, i) => i)
+    const shuffled = [...allIndices].sort(() => Math.random() - 0.5)
+    const pickedIndices = shuffled.slice(0, 3).sort(() => Math.random() - 0.5)
+    const correctOrderIndices = [...pickedIndices].sort((a, b) => a - b)
+    const challenge = pickedIndices.map(i => order.items[i])
+    const correctOrder = correctOrderIndices.map(i => order.items[i])
+    await update(ref(db, `games/${code}`), {
+      ouPhase: 'memorize',
+      ouLabel: order.label,
+      ouFullOrder: order.items,
+      ouChallenge: challenge,
+      ouCorrectOrder: correctOrder,
+      ouSubmissions: {},
+      ouStartAt: Date.now(),
+      ouCount: count + 1,
+      ouUsedOrders: [...used, orderIdx],
+      ouScoreMap: {},
+    })
+  }, [])
+
+  const endOURound = useCallback(async (code) => {
+    await update(ref(db, `games/${code}`), { state: 'round-over' })
+  }, [])
+
   // ── Return to lobby (play again — same players, scores reset) ────────────────
   const returnToLobby = useCallback(async (code, game) => {
     const playerUpdates = {}
     Object.values(game?.players || {}).forEach(p => {
       playerUpdates[`games/${code}/players/${p.id}/score`] = 0
       playerUpdates[`games/${code}/players/${p.id}/roundScore`] = 0
-      playerUpdates[`games/${code}/players/${p.id}/powerups`] = buildInitialPowerups(game?.settings)
+      playerUpdates[`games/${code}/players/${p.id}/powerups`] = buildInitialPowerups()
       playerUpdates[`games/${code}/players/${p.id}/secondLifeUsed`] = false
     })
     await update(ref(db), {
@@ -554,6 +777,14 @@ export function useGame() {
       [`games/${code}/whodPhase`]: null,
       [`games/${code}/whodAnswers`]: {},
       [`games/${code}/whodVotes`]: {},
+      [`games/${code}/potAmount`]: 0,
+      [`games/${code}/tfPhase`]: null,
+      [`games/${code}/tfSubmissions`]: {},
+      [`games/${code}/tfUsedIndices`]: [],
+      [`games/${code}/ouPhase`]: null,
+      [`games/${code}/ouSubmissions`]: {},
+      [`games/${code}/ouScoreMap`]: {},
+      [`games/${code}/ouUsedOrders`]: [],
     })
   }, [])
 
@@ -592,6 +823,8 @@ export function useGame() {
       jokeSubmissions: {},
       jokeVotes: {},
       jokePromptStartAt: Date.now(),
+      jokePromptCount: 0,        // starts at 0; nextJokePrompt increments to 1, 2…
+      jokePromptsUsed: [prompt], // track so we never repeat
     })
   }, [])
 
@@ -614,12 +847,13 @@ export function useGame() {
     const tally = {}
     Object.values(votes).forEach(targetId => { tally[targetId] = (tally[targetId] || 0) + 1 })
     const maxVotes = Math.max(...Object.values(tally), 0)
-    // Award points: 100 per vote, +100 bonus for most votes
+    // Award points: 100 per vote, +100 bonus for most votes. Double if powerupRound active.
     Object.entries(tally).forEach(([pid, count]) => {
       const p = game.players?.[pid]
       if (!p) return
       const bonus = count === maxVotes && count > 0 ? 100 : 0
-      const pts = count * 100 + bonus
+      const base = count * 100 + bonus
+      const pts = base * (game?.powerupRound?.[pid] ? 2 : 1)
       updates[`games/${code}/players/${pid}/score`] = (p.score || 0) + pts
       updates[`games/${code}/players/${pid}/roundScore`] = (p.roundScore || 0) + pts
     })
@@ -633,7 +867,9 @@ export function useGame() {
     const prompts = genreData?.prompts || []
     const used = game.jokePromptsUsed || []
     const remaining = prompts.filter(p => !used.includes(p))
-    if (remaining.length === 0) {
+    const count = (game.jokePromptCount || 0) + 1
+    const roundLimit = game.settings?.questionsPerRound || 5
+    if (remaining.length === 0 || count >= roundLimit) {
       await update(ref(db, `games/${code}`), { state: 'round-over' })
     } else {
       const next = remaining[Math.floor(Math.random() * remaining.length)]
@@ -644,6 +880,7 @@ export function useGame() {
         jokeVotes: {},
         jokePromptsUsed: [...used, next],
         jokePromptStartAt: Date.now(),
+        jokePromptCount: count,
       })
     }
   }, [])
@@ -675,12 +912,13 @@ export function useGame() {
     const agrees = Object.values(votes).filter(v => v === 'agree').length
     const disagrees = Object.values(votes).filter(v => v === 'disagree').length
     const majority = agrees >= disagrees ? 'agree' : 'disagree'
-    // Points: 75 to everyone in majority. Bonus 50 if unanimous
+    // Points: 75 to everyone in majority. Bonus 50 if unanimous. Double if powerupRound active.
     const updates = {}
     const isUnanimous = agrees === 0 || disagrees === 0
     players.forEach(p => {
       if (votes[p.id] === majority) {
-        const pts = 75 + (isUnanimous ? 50 : 0)
+        const base = 75 + (isUnanimous ? 50 : 0)
+        const pts = base * (game?.powerupRound?.[p.id] ? 2 : 1)
         updates[`games/${code}/players/${p.id}/score`] = (p.score || 0) + pts
         updates[`games/${code}/players/${p.id}/roundScore`] = (p.roundScore || 0) + pts
       }
@@ -720,6 +958,12 @@ export function useGame() {
   const startWhodunnit = useCallback(async (code, game) => {
     const players = Object.values(game.players || {}).filter(p => p.role !== 'gamescreen')
     if (players.length < 2) return
+    const count = (game.whodCount || 0) + 1
+    const roundLimit = game.settings?.questionsPerRound || 3  // fewer rounds — each is a full scenario
+    // End the round when we've hit the limit (only on subsequent plays, not first start)
+    if (game.whodPhase && count > roundLimit) {
+      await update(ref(db, `games/${code}`), { state: 'round-over' }); return
+    }
     const imposterId = players[Math.floor(Math.random() * players.length)].id
     const genreData = getGenreById(game.currentGenre?.id)
     const pairs = genreData?.pairs || []
@@ -732,6 +976,7 @@ export function useGame() {
       whodAnswers: {},
       whodVotes: {},
       whodStartAt: Date.now(),
+      whodCount: count,
     })
   }, [])
 
@@ -756,20 +1001,21 @@ export function useGame() {
     const majority = votesOnImposter > (players.length - 1) / 2
     const updates = {}
     if (majority) {
-      // Imposter caught — non-imposters get points for correct votes
+      // Imposter caught — detectives who voted correctly get points (doubled if powerupRound active)
       players.forEach(p => {
         if (p.id !== imposterId && votes[p.id] === imposterId) {
-          const pts = 150
+          const pts = 150 * (game?.powerupRound?.[p.id] ? 2 : 1)
           updates[`games/${code}/players/${p.id}/score`] = (p.score || 0) + pts
           updates[`games/${code}/players/${p.id}/roundScore`] = (p.roundScore || 0) + pts
         }
       })
     } else {
-      // Imposter escaped — they get 200 points
+      // Imposter escaped — they get 200 points (doubled if powerupRound active)
       const imp = game.players?.[imposterId]
       if (imp) {
-        updates[`games/${code}/players/${imposterId}/score`] = (imp.score || 0) + 200
-        updates[`games/${code}/players/${imposterId}/roundScore`] = (imp.roundScore || 0) + 200
+        const pts = 200 * (game?.powerupRound?.[imposterId] ? 2 : 1)
+        updates[`games/${code}/players/${imposterId}/score`] = (imp.score || 0) + pts
+        updates[`games/${code}/players/${imposterId}/roundScore`] = (imp.roundScore || 0) + pts
       }
     }
     updates[`games/${code}/whodPhase`] = 'results'
@@ -795,14 +1041,10 @@ export function useGame() {
     const participants = Object.values(game?.players || {}).filter(p => p.role !== 'gamescreen')
     if (participants.length < 2) return false
 
-    // Pick 2 random players as debaters
     const shuffled = [...participants].sort(() => Math.random() - 0.5)
     const defender = shuffled[0]
     const prosecutor = shuffled[1]
-
-    // Pick a random statement
     const statement = statements[Math.floor(Math.random() * statements.length)]
-
     const currentGenre = { id: 'outlandishlawyers', name: 'Outlandish Lawyers', emoji: '⚖️', gameType: 'lawyers', color: '#c084fc' }
 
     await update(ref(db, `games/${code}`), {
@@ -815,6 +1057,41 @@ export function useGame() {
       lawyersPhaseStart: Date.now(),
       lawyersVotes: {},
       lawyersPoints: null,
+      lawyersRound: 1,
+      lawyersTotalRounds: 3,
+      lawyersUsedStatements: [statement],
+    })
+    return true
+  }, [])
+
+  // Start the next case within the same Lawyers game round (rounds 2 and 3)
+  const nextLawyersDebate = useCallback(async (code, game) => {
+    const genre = getGenreById('outlandishlawyers')
+    const statements = genre?.statements || ['The floor is a very low ceiling']
+    const participants = Object.values(game?.players || {}).filter(p => p.role !== 'gamescreen')
+    if (participants.length < 2) return false
+
+    // Fresh random debater pair each case
+    const shuffled = [...participants].sort(() => Math.random() - 0.5)
+    const defender = shuffled[0]
+    const prosecutor = shuffled[1]
+
+    // Avoid repeating statements used in this game round
+    const used = game.lawyersUsedStatements || [game.lawyersStatement].filter(Boolean)
+    const remaining = statements.filter(s => !used.includes(s))
+    const pool = remaining.length > 0 ? remaining : statements
+    const statement = pool[Math.floor(Math.random() * pool.length)]
+
+    await update(ref(db, `games/${code}`), {
+      lawyersPhase: 'intro',
+      lawyersDefenderId: defender.id,
+      lawyersProsecutorId: prosecutor.id,
+      lawyersStatement: statement,
+      lawyersPhaseStart: Date.now(),
+      lawyersVotes: {},
+      lawyersPoints: null,
+      lawyersRound: (game.lawyersRound || 1) + 1,
+      lawyersUsedStatements: [...used, statement],
     })
     return true
   }, [])
@@ -858,30 +1135,33 @@ export function useGame() {
     const prosPts = 150 - defPts
 
     const playerUpdates = {}
-    // Award debater points
+    const majoritySide = defCount >= prosCount ? 'defence' : 'prosecution'
+    // Award debater points — doubled if their powerupRound is active
     if (defenderId) {
       const d = game?.players?.[defenderId]
       if (d) {
-        playerUpdates[`games/${code}/players/${defenderId}/score`] = (d.score || 0) + defPts
-        playerUpdates[`games/${code}/players/${defenderId}/roundScore`] = (d.roundScore || 0) + defPts
+        const finalDef = defPts * (game?.powerupRound?.[defenderId] ? 2 : 1)
+        playerUpdates[`games/${code}/players/${defenderId}/score`] = (d.score || 0) + finalDef
+        playerUpdates[`games/${code}/players/${defenderId}/roundScore`] = (d.roundScore || 0) + finalDef
       }
     }
     if (prosecutorId) {
       const p = game?.players?.[prosecutorId]
       if (p) {
-        playerUpdates[`games/${code}/players/${prosecutorId}/score`] = (p.score || 0) + prosPts
-        playerUpdates[`games/${code}/players/${prosecutorId}/roundScore`] = (p.roundScore || 0) + prosPts
+        const finalPros = prosPts * (game?.powerupRound?.[prosecutorId] ? 2 : 1)
+        playerUpdates[`games/${code}/players/${prosecutorId}/score`] = (p.score || 0) + finalPros
+        playerUpdates[`games/${code}/players/${prosecutorId}/roundScore`] = (p.roundScore || 0) + finalPros
       }
     }
-    // Award audience: +50 for voting with the majority
-    const majoritySide = defCount >= prosCount ? 'defence' : 'prosecution'
+    // Award audience: +50 for voting with the majority — doubled if powerupRound active
     Object.entries(votes).forEach(([pid, side]) => {
-      if (pid === defenderId || pid === prosecutorId) return // debaters don't vote
+      if (pid === defenderId || pid === prosecutorId) return
       if (side === majoritySide) {
         const p = game?.players?.[pid]
         if (p) {
-          playerUpdates[`games/${code}/players/${pid}/score`] = (p.score || 0) + 50
-          playerUpdates[`games/${code}/players/${pid}/roundScore`] = (p.roundScore || 0) + 50
+          const audiencePts = 50 * (game?.powerupRound?.[pid] ? 2 : 1)
+          playerUpdates[`games/${code}/players/${pid}/score`] = (p.score || 0) + audiencePts
+          playerUpdates[`games/${code}/players/${pid}/roundScore`] = (p.roundScore || 0) + audiencePts
         }
       }
     })
@@ -903,7 +1183,9 @@ export function useGame() {
     const prompts = genreData?.prompts || []
     const used = game.fgPromptsUsed || []
     const remaining = prompts.filter(p => !used.includes(p))
-    if (remaining.length === 0) {
+    const count = (game.fgPromptCount || 0) + 1
+    const roundLimit = game.settings?.questionsPerRound || 5
+    if (remaining.length === 0 || count > roundLimit) {
       await update(ref(db, `games/${code}`), { state: 'round-over' }); return
     }
     const prompt = remaining[Math.floor(Math.random() * remaining.length)]
@@ -914,7 +1196,7 @@ export function useGame() {
       fgVotes: {},
       fgStartAt: Date.now(),
       fgPromptsUsed: [...used, prompt],
-      fgPromptCount: (game.fgPromptCount || 0) + 1,
+      fgPromptCount: count,
     })
   }, [])
 
@@ -935,15 +1217,16 @@ export function useGame() {
     const submissions = game.fgSubmissions || {}
     const players = Object.values(game.players || {}).filter(p => p.role !== 'gamescreen')
     const updates = {}
-    // Participation points for everyone who submitted
+    // Participation points for everyone who submitted. Double if powerupRound active.
     players.forEach(p => {
       if (submissions[p.id]) {
-        const pts = 25
+        const base = 25
+        const pts = base * (game?.powerupRound?.[p.id] ? 2 : 1)
         updates[`games/${code}/players/${p.id}/score`] = (p.score || 0) + pts
         updates[`games/${code}/players/${p.id}/roundScore`] = (p.roundScore || 0) + pts
       }
     })
-    // Vote points: 75 per vote received
+    // Vote points: 75 per vote received + 100 bonus for winner. Double if powerupRound active.
     const tally = {}
     Object.values(votes).forEach(targetId => { tally[targetId] = (tally[targetId] || 0) + 1 })
     const maxVotes = Math.max(...Object.values(tally), 0)
@@ -951,11 +1234,14 @@ export function useGame() {
       const p = game.players?.[pid]
       if (!p) return
       const bonus = count === maxVotes && count > 0 ? 100 : 0
-      const pts = count * 75 + bonus
-      // Add to existing (participation already added above)
-      const current = (p.score || 0) + 25 // participation already in updates
-      updates[`games/${code}/players/${pid}/score`] = current + pts
-      updates[`games/${code}/players/${pid}/roundScore`] = ((p.roundScore || 0) + 25) + pts
+      const baseVote = count * 75 + bonus
+      const voteMultiplier = game?.powerupRound?.[pid] ? 2 : 1
+      const votePts = baseVote * voteMultiplier
+      // participation already applied above
+      const participation = submissions[pid] ? (25 * voteMultiplier) : 0
+      const current = (p.score || 0) + participation
+      updates[`games/${code}/players/${pid}/score`] = current + votePts
+      updates[`games/${code}/players/${pid}/roundScore`] = ((p.roundScore || 0) + participation) + votePts
     })
     updates[`games/${code}/fgPhase`] = 'results'
     await update(ref(db), updates)
@@ -992,8 +1278,10 @@ export function useGame() {
     startJokePrompt, submitJoke, startJokeVoting, voteJoke, revealJokeResults, nextJokePrompt, endJokeRound,
     startHotTakePrompt, submitHotTakeVote, revealHotTakeResults, nextHotTakePrompt, endHotTakeRound,
     startWhodunnit, submitWhodAnswer, startWhodVoting, submitWhodVote, revealWhodResults, endWhodRound,
-    startLawyers, advanceLawyersPhase, submitLawyersVote, revealLawyersResults, endLawyersRound,
+    startLawyers, nextLawyersDebate, advanceLawyersPhase, submitLawyersVote, revealLawyersResults, endLawyersRound,
     startFillGap, submitFillAnswer, startFillVoting, voteFillAnswer, revealFillResults, endFillRound,
+    startTrueOrFalse, submitTFAnswer, revealTFResults, nextTFQuestion, endTFRound,
+    startOrdersUp, submitOUAnswer, advanceOUPhase, revealOUResults, nextOUOrder, endOURound,
     requestPause, cancelPauseRequest, unpauseGame,
   }
 }
