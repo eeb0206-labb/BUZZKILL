@@ -26,7 +26,9 @@ export default function RoundOverScreen() {
     if (!gameCode) return
     const unsub = subscribeToGame(gameCode, (g) => {
       if (g.state === 'round-pick') setScreen('round-pick')
-      if (g.state === 'final') setScreen('final')
+      if (g.state === 'final')      setScreen('final')
+      // Redemption Arc: host sets state back to 'quiz' — all players must follow
+      if (g.state === 'quiz' && g.currentGenre?.gameType === 'redemption') setScreen('quiz-host')
     })
     return unsub
   }, [gameCode])
