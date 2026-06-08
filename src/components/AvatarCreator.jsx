@@ -9,6 +9,7 @@
 import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import AvatarSvg from './AvatarSvg'
+import { CameraCapture } from './ui'
 import {
   DEFAULT_AVATAR_CONFIG, randomAvatarConfig,
   BODY_TYPES, BODY_COLORS, EYE_STYLES, MOUTH_STYLES, EYEBROW_STYLES,
@@ -116,8 +117,9 @@ function SectionLabel({ children }) {
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export default function AvatarCreator({ config, onChange }) {
+export default function AvatarCreator({ config, onChange, photoSrc, onPhotoChange }) {
   const [tab, setTab] = useState('body')
+  const [showCapture, setShowCapture] = useState(false)
   const c = { ...DEFAULT_AVATAR_CONFIG, ...(config || {}) }
 
   function update(key, value) {
@@ -140,7 +142,7 @@ export default function AvatarCreator({ config, onChange }) {
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
           minWidth: 130,
         }}>
-          <AvatarSvg config={c} size={120} showFull />
+          <AvatarSvg config={c} size={120} showFull photoSrc={photoSrc || null} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <button
@@ -162,7 +164,7 @@ export default function AvatarCreator({ config, onChange }) {
             background: 'var(--surface)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <AvatarSvg config={c} size={56} showFull={false}/>
+            <AvatarSvg config={c} size={56} showFull={false} photoSrc={photoSrc || null}/>
           </div>
           <div style={{ fontSize: '0.62rem', color: 'var(--text3)', textAlign: 'center' }}>As shown<br/>in lobby</div>
         </div>
@@ -235,33 +237,105 @@ export default function AvatarCreator({ config, onChange }) {
           {/* ── FACE ────────────────────────────────────────────────────── */}
           {tab === 'face' && (
             <>
+              {/* ── Your Face Photo ─────────────────────────────────────── */}
               <div>
-                <SectionLabel>Eyes</SectionLabel>
-                <OptionGrid
-                  options={EYE_STYLES}
-                  selected={c.eyeStyle}
-                  onSelect={v => update('eyeStyle', v)}
-                  size={62}
-                />
+                <SectionLabel>📷 Your Face</SectionLabel>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text3)', marginBottom: 10 }}>
+                  Add a selfie — it appears as a comically large bobblehead on your avatar.
+                </div>
+
+                {/* Has photo + not retaking */}
+                {photoSrc && !showCapture && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <img
+                      src={photoSrc}
+                      alt="Your face"
+                      style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover',
+                        border: '3px solid var(--accent)', flexShrink: 0 }}
+                    />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => setShowCapture(true)}
+                      >📷 Change photo</button>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ color: 'var(--red)' }}
+                        onClick={() => { onPhotoChange?.(null) }}
+                      >✕ Remove</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Camera capture — shown when no photo, or when retaking */}
+                {(!photoSrc || showCapture) && (
+                  <div>
+                    {showCapture && (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ marginBottom: 10 }}
+                        onClick={() => setShowCapture(false)}
+                      >← Cancel</button>
+                    )}
+                    <CameraCapture
+                      onCapture={photo => {
+                        onPhotoChange?.(photo)
+                        setShowCapture(false)
+                      }}
+                      onSkip={null}
+                    />
+                  </div>
+                )}
               </div>
-              <div>
-                <SectionLabel>Mouth</SectionLabel>
-                <OptionGrid
-                  options={MOUTH_STYLES}
-                  selected={c.mouthStyle}
-                  onSelect={v => update('mouthStyle', v)}
-                  size={62}
-                />
-              </div>
-              <div>
-                <SectionLabel>Eyebrows</SectionLabel>
-                <OptionGrid
-                  options={EYEBROW_STYLES}
-                  selected={c.eyebrowStyle}
-                  onSelect={v => update('eyebrowStyle', v)}
-                  size={62}
-                />
-              </div>
+
+              {photoSrc ? (
+                /* When a photo is set — encourage using the other tabs */
+                <div style={{
+                  padding: '12px 14px', borderRadius: 12,
+                  background: 'rgba(72,149,239,0.07)', border: '1.5px solid rgba(72,149,239,0.2)',
+                  fontSize: '0.78rem', color: 'var(--text2)', lineHeight: 1.55,
+                }}>
+                  <div style={{ fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>✨ Looking good!</div>
+                  Your photo is the face layer — hair, accessories, clothes and body type all still apply on top.
+                  Head to the other tabs to style the rest of your avatar!
+                </div>
+              ) : (
+                /* No photo — show the cartoon face options */
+                <>
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 4 }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text3)', marginBottom: 10 }}>
+                      Or customise the cartoon face below
+                    </div>
+                  </div>
+                  <div>
+                    <SectionLabel>Eyes</SectionLabel>
+                    <OptionGrid
+                      options={EYE_STYLES}
+                      selected={c.eyeStyle}
+                      onSelect={v => update('eyeStyle', v)}
+                      size={62}
+                    />
+                  </div>
+                  <div style={{ marginTop: 12 }}>
+                    <SectionLabel>Mouth</SectionLabel>
+                    <OptionGrid
+                      options={MOUTH_STYLES}
+                      selected={c.mouthStyle}
+                      onSelect={v => update('mouthStyle', v)}
+                      size={62}
+                    />
+                  </div>
+                  <div style={{ marginTop: 12 }}>
+                    <SectionLabel>Eyebrows</SectionLabel>
+                    <OptionGrid
+                      options={EYEBROW_STYLES}
+                      selected={c.eyebrowStyle}
+                      onSelect={v => update('eyebrowStyle', v)}
+                      size={62}
+                    />
+                  </div>
+                </>
+              )}
             </>
           )}
 

@@ -719,16 +719,17 @@ function renderAccessory(acc, bt, cx, cy) {
 }
 
 // ── head clip shape per body type (for photo overlay) ────────────────────────
-// All coords in the 0-100×140 coordinate space
+// Comically oversized so the face photo is a huge bobblehead on a tiny body.
+// All coords in the 0-100×140 coordinate space.
 const HEAD_CLIP = {
-  human:  { shape: 'circle', cx: 50, cy: 30, r: 22 },
-  chonk:  { shape: 'circle', cx: 50, cy: 30, r: 24 },
-  cat:    { shape: 'circle', cx: 50, cy: 33, r: 21 },
-  dog:    { shape: 'circle', cx: 50, cy: 33, r: 21 },
-  alien:  { shape: 'ellipse', cx: 50, cy: 28, rx: 26, ry: 28 },
-  robot:  { shape: 'rect',   x: 28, y: 10, w: 44, h: 44, rx: 5 },
-  bean:   { shape: 'ellipse', cx: 50, cy: 52, rx: 20, ry: 22 }, // visor
-  ghost:  { shape: 'circle', cx: 50, cy: 48, r: 22 },
+  human:  { shape: 'circle',  cx: 50, cy: 27, r: 37 },
+  chonk:  { shape: 'circle',  cx: 50, cy: 27, r: 39 },
+  cat:    { shape: 'circle',  cx: 50, cy: 27, r: 35 },
+  dog:    { shape: 'circle',  cx: 50, cy: 27, r: 35 },
+  alien:  { shape: 'ellipse', cx: 50, cy: 23, rx: 38, ry: 38 },
+  robot:  { shape: 'rect',    x: 13, y: 1,   w: 74, h: 64, rx: 10 },
+  bean:   { shape: 'ellipse', cx: 50, cy: 47, rx: 28, ry: 30 },
+  ghost:  { shape: 'circle',  cx: 50, cy: 42, r: 32 },
 }
 
 // Returns defs + image elements for overlaying a photo on the head.
@@ -834,10 +835,6 @@ export default function AvatarSvg({ config, size = 80, showFull = false, photoSr
       {/* ── Clothes ───────────────────────────────────────────────────────── */}
       {renderClothes(bt, c.topStyle, c.topColor, c.bottomStyle, c.bottomColor)}
 
-      {/* ── Photo overlay — renders BEFORE hair so hair/accessories sit on top ── */}
-      {/* This gives the classic bobblehead look: real face + cartoon body + SVG hat */}
-      {photoSrc && renderHeadPhoto(photoSrc, bt, `hc-${uid}`)}
-
       {/* ── Face — only rendered when there is no photo overlay ───────────── */}
       {!photoSrc && bt !== 'robot' && (
         <>
@@ -853,10 +850,14 @@ export default function AvatarSvg({ config, size = 80, showFull = false, photoSr
         </>
       )}
 
-      {/* ── Hair — on top of photo (like a hat on a bobblehead) ───────────── */}
+      {/* ── Photo face overlay — sits BETWEEN body/clothes and hair/accessories */}
+      {/* so hair + accessories always render on top, looking like a real head   */}
+      {photoSrc && renderHeadPhoto(photoSrc, bt, `hc-${uid}`)}
+
+      {/* ── Hair — rendered ON TOP of photo face ─────────────────────────── */}
       {renderHair(c.hairStyle, c.hairColor, bt)}
 
-      {/* ── Accessories (always on top) ───────────────────────────────────── */}
+      {/* ── Accessories — also on top of photo ───────────────────────────── */}
       {renderAccessory(c.accessory, bt, faceX, faceY)}
     </svg>
   )
