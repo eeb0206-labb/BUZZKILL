@@ -749,6 +749,7 @@ export const CREATIVE_GENRES = [
     gameType: 'lawyers',
     color: '#c084fc',
     category: 'creative',
+    minPlayers: 3, // needs 2 debaters + at least 1 juror
     statements: [
       "Bread is best served in toilet water",
       "Sleeping in is technically a form of self-defence",
@@ -836,11 +837,12 @@ export function getGenreById(id) {
   return ALL_GENRES.find(g => g.id === id) || null
 }
 
-export function getRandomGenres(count, excludeIds = [], usedIds = []) {
+export function getRandomGenres(count, excludeIds = [], usedIds = [], playerCount = Infinity) {
   const available = ALL_GENRES.filter(g =>
     !excludeIds.includes(g.id) &&
     g.id !== 'insidejokes' &&
-    g.id !== 'custom'
+    g.id !== 'custom' &&
+    (!g.minPlayers || g.minPlayers <= playerCount)
   )
   const shuffle = [...available].sort(() => Math.random() - 0.5)
   // Prefer unused ones first

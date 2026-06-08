@@ -205,7 +205,9 @@ export function useGame() {
   const dealGenres = useCallback(async (code, game) => {
     const excluded = game.settings?.excludedGenres || []
     const used = game.usedGenres || []
-    const genres = getRandomGenres(3, excluded, used)
+    // Count real players (exclude TV screen) so minPlayers requirements are enforced
+    const playerCount = Object.values(game?.players || {}).filter(p => p.role !== 'gamescreen').length
+    const genres = getRandomGenres(3, excluded, used, playerCount)
     await update(ref(db, `games/${code}`), {
       dealGenres: genres.map(g => g.id),
       dealGenresAt: Date.now(), // timestamp used to sync the countdown timer across all devices
