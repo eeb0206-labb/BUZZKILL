@@ -331,6 +331,35 @@ export default function OutlandishLawyersScreen() {
     }
   }
 
+  // ── Not enough players guard ─────────────────────────────────────────────────
+  // TV screen doesn't count — need ≥3 real players (2 debaters + 1 juror)
+  if (allPlayers.length < 3) {
+    return (
+      <div className="screen">
+        <div className="topbar">
+          <div style={{ fontFamily: 'var(--font-head)', color: '#c084fc', fontSize: '0.95rem' }}>⚖️ Outlandish Lawyers</div>
+        </div>
+        <div className="screen-inner" style={{ alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+          <div style={{ fontSize: '3rem' }}>⚖️</div>
+          <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.3rem', color: '#c084fc', textAlign: 'center' }}>
+            Not enough players
+          </div>
+          <div className="card" style={{ textAlign: 'center', maxWidth: 300, background: 'rgba(192,132,252,0.06)', borderColor: 'rgba(192,132,252,0.3)' }}>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text2)', lineHeight: 1.6 }}>
+              Outlandish Lawyers needs at least <strong>3 players</strong> — 2 debaters and at least 1 juror to vote.
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: 8 }}>
+              Currently {allPlayers.length} player{allPlayers.length === 1 ? '' : 's'} (TV Screen doesn't count)
+            </div>
+          </div>
+          {isController && (
+            <button className="btn btn-ghost" onClick={() => endLawyersRound(gameCode)}>← Back to lobby</button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="screen">
       <Confetti active={showConfetti} />

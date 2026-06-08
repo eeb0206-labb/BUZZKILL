@@ -850,15 +850,14 @@ export default function AvatarSvg({ config, size = 80, showFull = false, photoSr
         </>
       )}
 
-      {/* ── Photo face overlay — sits BETWEEN body/clothes and hair/accessories */}
-      {/* so hair + accessories always render on top, looking like a real head   */}
-      {photoSrc && renderHeadPhoto(photoSrc, bt, `hc-${uid}`)}
-
-      {/* ── Hair — rendered ON TOP of photo face ─────────────────────────── */}
+      {/* ── Hair ─────────────────────────────────────────────────────────── */}
       {renderHair(c.hairStyle, c.hairColor, bt)}
 
-      {/* ── Accessories — also on top of photo ───────────────────────────── */}
+      {/* ── Accessories ──────────────────────────────────────────────────── */}
       {renderAccessory(c.accessory, bt, faceX, faceY)}
+
+      {/* ── Photo overlay — on top of everything for a full-face bobblehead ─ */}
+      {photoSrc && renderHeadPhoto(photoSrc, bt, `hc-${uid}`)}
     </svg>
   )
 }

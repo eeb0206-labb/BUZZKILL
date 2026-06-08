@@ -1039,7 +1039,8 @@ export function useGame() {
     const statements = genre?.statements || ['The floor is a very low ceiling']
 
     const participants = Object.values(game?.players || {}).filter(p => p.role !== 'gamescreen')
-    if (participants.length < 2) return false
+    // Need at least 3: 2 debaters + 1 juror to vote
+    if (participants.length < 3) return false
 
     const shuffled = [...participants].sort(() => Math.random() - 0.5)
     const defender = shuffled[0]
@@ -1069,7 +1070,7 @@ export function useGame() {
     const genre = getGenreById('outlandishlawyers')
     const statements = genre?.statements || ['The floor is a very low ceiling']
     const participants = Object.values(game?.players || {}).filter(p => p.role !== 'gamescreen')
-    if (participants.length < 2) return false
+    if (participants.length < 3) return false
 
     // Fresh random debater pair each case
     const shuffled = [...participants].sort(() => Math.random() - 0.5)

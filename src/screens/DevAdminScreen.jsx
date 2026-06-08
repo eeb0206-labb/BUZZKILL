@@ -12,7 +12,7 @@ import { useGame } from '../hooks/useGame'
 import { ALL_GENRES, GAME_TYPES } from '../data/genres'
 import { db, ref, update } from '../firebase'
 
-const GAME_TYPE_ORDER = ['quiz','draw','music','joke','hottake','whod','blitz','fill']
+const GAME_TYPE_ORDER = ['quiz','blitz','fill','draw','music','joke','hottake','whod','redemption','lawyers','truefalse','ordersup']
 
 export default function DevAdminScreen() {
   const store = useStore()
@@ -113,7 +113,7 @@ export default function DevAdminScreen() {
                   <div className="flex-1">
                     <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{genre.name}</div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
-                      {genre.id} · {genre.questions?.length || genre.prompts?.length || genre.pairs?.length || 0} items
+                      {genre.id} · {genre.questions?.length || genre.prompts?.length || genre.pairs?.length || genre.orders?.length || genre.statements?.length || 0} items
                     </div>
                   </div>
                   {loading === genre.id ? (
