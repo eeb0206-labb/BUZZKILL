@@ -105,6 +105,40 @@ export default function PowerupSelectScreen() {
           </motion.div>
         )}
 
+        {/* Powerup dealt this round */}
+        {isPlayer && (() => {
+          const dealtKey = game?.roundDealtPowerups?.[myId]
+          const info = dealtKey ? POWERUP_INFO[dealtKey] : null
+          if (!info) return null
+          return (
+            <motion.div
+              className="card col center gap-8"
+              style={{ background: `${info.color}14`, borderColor: `${info.color}55` }}
+              initial={{ opacity: 0, scale: 0.75, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 22, delay: 0.15 }}
+            >
+              <div style={{ fontSize: '0.7rem', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700 }}>
+                🎁 Your powerup this round
+              </div>
+              <motion.div
+                style={{ fontSize: '3rem' }}
+                initial={{ scale: 0.4, rotate: -15 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ type: 'spring', stiffness: 380, damping: 18, delay: 0.25 }}
+              >
+                {info.icon}
+              </motion.div>
+              <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.2rem', color: info.color }}>
+                {info.label}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text2)', textAlign: 'center' }}>
+                {info.desc.replace('%n', '1')}
+              </div>
+            </motion.div>
+          )
+        })()}
+
         {/* Double Points activation */}
         {isPlayer && (hasDoublePoints || isActive) && (
           <motion.div

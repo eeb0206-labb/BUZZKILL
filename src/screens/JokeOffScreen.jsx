@@ -40,6 +40,8 @@ export default function JokeOffScreen() {
   const votes = game?.jokeVotes || {}
   const players = Object.values(game?.players || {}).filter(p => p.role !== 'gamescreen')
   const genre = game?.currentGenre
+  const promptNum = (game?.jokePromptCount || 0) + 1
+  const roundLimit = game?.settings?.questionsPerRound || 5
 
   // My submission
   const mySubmission = submissions[myId]
@@ -166,7 +168,7 @@ export default function JokeOffScreen() {
     <div className="screen">
       <div className="topbar">
         <div className="round-badge">{genre?.emoji} Joke Off</div>
-        <div className="topbar-logo" style={{ color: '#f77f00' }}>😂 Joke Off</div>
+        <div className="topbar-logo" style={{ color: '#f77f00' }}>😂 {promptNum}/{roundLimit}</div>
         <div className="row gap-8">
           <MuteButton />
           <button className="btn btn-ghost btn-sm" onClick={() => setShowSettings(true)}>⚙️</button>

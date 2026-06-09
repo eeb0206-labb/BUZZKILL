@@ -61,6 +61,7 @@ export default function MusicBangersScreen() {
   const [answerSubmitted, setAnswerSubmitted] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [ripples, setRipples] = useState([])
+  const [ytKey, setYtKey] = useState(0) // increment to reload YouTube iframe
   const buzzerRef = useRef(null)
   const audioRef = useRef(null)
   const autoAdvRef = useRef(false)
@@ -97,6 +98,7 @@ export default function MusicBangersScreen() {
     setAnswerSubmitted(false)
     setIsPlaying(false)
     setAudioError(false)
+    setYtKey(k => k + 1) // reset YouTube iframe
     autoAdvRef.current = false
     if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0 }
   }, [qIndex])
@@ -112,8 +114,8 @@ export default function MusicBangersScreen() {
     return unsub
   }, [gameCode])
 
-  // ── Music (dim when playing clip) ─────────────────────────────────────────
-  useEffect(() => { startMusic(); return () => stopMusic() }, [])
+  // ── No background music during Music Bangers — song clips ARE the audio ──
+  useEffect(() => { stopMusic(); return () => stopMusic() }, [])
 
   // ── Auto-advance: correct ─────────────────────────────────────────────────
   useEffect(() => {
@@ -141,24 +143,61 @@ export default function MusicBangersScreen() {
     return () => { clearTimeout(t); autoAdvRef.current = false }
   }, [wrongAnswerers.length, allParticipants.length, game?.buzzer, game?.answerRevealed, isController])
 
-  // ── Audio control ──────────────────────────────────────────────────────────
+  // ── YouTube helpers ────────────────────────────────────────────────────────
+  function isYouTubeUrl(url) {
+    return url && (url.includes('youtu.be') || url.includes('youtube.com'))
+  }
+
+  function toYouTubeEmbed(url, autoplay = false) {
+    try {
+      const u = new URL(url)
+      let videoId = ''
+      let startTime = 0
+      if (u.hostname === 'youtu.be') {
+        videoId = u.pathname.slice(1)
+        startTime = parseInt(u.searchParams.get('t') || '0') || 0
+      } else {
+        videoId = u.searchParams.get('v') || ''
+        startTime = parseInt(u.searchParams.get('t') || '0') || 0
+      }
+      if (!videoId) return null
+      return `https://www.youtube.com/embed/${videoId}?start=${startTime}&rel=0&modestbranding=1${autoplay ? '&autoplay=1' : ''}`
+    } catch { return null }
+  }
+
+  // ── Audio / clip control ───────────────────────────────────────────────────
   function handlePlayPause() {
-    if (!audioRef.current) return
-    if (isPlaying) {
-      audioRef.current.pause()
-      setIsPlaying(false)
-      undimMusic()
+    const isYt = isYouTubeUrl(clipUrl)
+    if (isYt) {
+      if (isPlaying) {
+        setIsPlaying(false)
+      } else {
+        setYtKey(k => k + 1) // reload iframe → triggers autoplay attempt
+        setIsPlaying(true)
+      }
     } else {
-      audioRef.current.play().catch(() => setAudioError(true))
-      setIsPlaying(true)
+      if (!audioRef.current) return
+      if (isPlaying) {
+        audioRef.current.pause()
+        setIsPlaying(false)
+      } else {
+        audioRef.current.play().catch(() => setAudioError(true))
+        setIsPlaying(true)
+      }
     }
   }
 
   function handleReplay() {
-    if (!audioRef.current) return
-    audioRef.current.currentTime = 0
-    audioRef.current.play().catch(() => setAudioError(true))
-    setIsPlaying(true)
+    const isYt = isYouTubeUrl(clipUrl)
+    if (isYt) {
+      setYtKey(k => k + 1) // reload from start time with autoplay
+      setIsPlaying(true)
+    } else {
+      if (!audioRef.current) return
+      audioRef.current.currentTime = 0
+      audioRef.current.play().catch(() => setAudioError(true))
+      setIsPlaying(true)
+    }
   }
 
   // ── QM marking ────────────────────────────────────────────────────────────
@@ -287,32 +326,67 @@ export default function MusicBangersScreen() {
               </motion.div>
             )}
 
-            {/* Audio controls (visible to host/controller) */}
+            {/* Clip controls — only controller/QM sees these */}
             {(isController || isQM) && (
-              <div className="row gap-10" style={{ flexWrap: 'wrap', justifyContent: 'center' }}>
+              <div className="col gap-10" style={{ width: '100%', alignItems: 'center' }}>
                 {clipUrl ? (
                   <>
-                    <button
-                      className="btn btn-primary"
-                      style={{ minWidth: 110, background: isPlaying ? 'var(--red)' : '#f72585', borderColor: 'transparent' }}
-                      onClick={handlePlayPause}
-                    >
-                      {isPlaying ? '⏸ Pause' : '▶ Play Clip'}
-                    </button>
-                    <button className="btn btn-ghost" onClick={handleReplay}>↺ Replay</button>
+                    <div className="row gap-10" style={{ flexWrap: 'wrap', justifyContent: 'center' }}>
+                      <button
+                        className="btn btn-primary"
+                        style={{
+                          minWidth: 120,
+                          background: isPlaying ? '#c0006c' : '#f72585',
+                          borderColor: 'transparent',
+                        }}
+                        onClick={handlePlayPause}
+                      >
+                        {isYouTubeUrl(clipUrl)
+                          ? (isPlaying ? '🎵 Playing…' : '▶ Play Clip')
+                          : (isPlaying ? '⏸ Pause' : '▶ Play Clip')
+                        }
+                      </button>
+                      <button className="btn btn-ghost" onClick={handleReplay}>↺ Replay</button>
+                    </div>
+
+                    {/* YouTube iframe — shown when isPlaying */}
+                    {isYouTubeUrl(clipUrl) && isPlaying && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                        style={{
+                          borderRadius: 12, overflow: 'hidden',
+                          width: '100%', maxWidth: 360,
+                          aspectRatio: '16/9',
+                          boxShadow: '0 4px 24px rgba(247,37,133,0.25)',
+                        }}
+                      >
+                        <iframe
+                          key={ytKey}
+                          src={toYouTubeEmbed(clipUrl, true)}
+                          width="100%"
+                          height="100%"
+                          style={{ border: 'none', display: 'block', width: '100%', height: '100%' }}
+                          allow="autoplay; encrypted-media"
+                          allowFullScreen
+                          title="Music clip"
+                        />
+                      </motion.div>
+                    )}
+
+                    {/* Direct audio error */}
+                    {audioError && !isYouTubeUrl(clipUrl) && (
+                      <div style={{ fontSize: '0.78rem', color: 'var(--red)' }}>⚠️ Clip failed to load</div>
+                    )}
                   </>
                 ) : (
-                  <div className="card" style={{ padding: '8px 14px', background: 'rgba(244,208,63,0.06)', borderColor: 'rgba(244,208,63,0.3)' }}>
+                  <div className="card" style={{ padding: '8px 14px', background: 'rgba(244,208,63,0.06)', borderColor: 'rgba(244,208,63,0.3)', textAlign: 'center' }}>
                     <div style={{ fontSize: '0.78rem', color: 'var(--gold)' }}>
-                      ⚠️ No clip URL — add <code>clipUrl</code> in genres.js
+                      ⚠️ No clip URL set for this song
                     </div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text3)', marginTop: 2 }}>
-                      Play the song yourself on Spotify / YouTube for now!
+                      Play it on Spotify / YouTube yourself!
                     </div>
                   </div>
-                )}
-                {audioError && (
-                  <div style={{ fontSize: '0.78rem', color: 'var(--red)' }}>⚠️ Clip failed to load</div>
                 )}
               </div>
             )}

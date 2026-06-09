@@ -16,7 +16,7 @@ import { useSound } from '../hooks/useSound'
 import { getGenreById } from '../data/genres'
 import SettingsOverlay from '../components/SettingsOverlay'
 
-const INPUT_TIME = 45
+const INPUT_TIME = 75
 const VOTE_TIME  = 25
 
 export default function FillGapScreen() {
@@ -41,6 +41,8 @@ export default function FillGapScreen() {
   const players = Object.values(game?.players || {}).filter(p => p.role !== 'gamescreen')
   const genre = game?.currentGenre
   const genreData = getGenreById(genre?.id)
+  const promptNum = game?.fgPromptCount || 1
+  const roundLimit = game?.settings?.questionsPerRound || 5
 
   const myVote = votes[myId]
   const submittedCount = Object.keys(submissions).length
@@ -76,34 +78,41 @@ export default function FillGapScreen() {
     autoRef.current = false
   }, [prompt])
 
-  // Timer
+  // Timer — input phase uses fgStartAt, vote phase uses fgVoteStartAt
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current)
-    const total = phase === 'input' ? INPUT_TIME : phase === 'vote' ? VOTE_TIME : 0
-    if (!total || !game?.fgStartAt) return
-    const elapsed = Math.floor((Date.now() - game.fgStartAt) / 1000)
-    const remaining = Math.max(0, total - elapsed)
-    setTimeLeft(remaining)
-    timerRef.current = setInterval(() => setTimeLeft(t => Math.max(0, t - 1)), 1000)
+    if (phase === 'input' && game?.fgStartAt) {
+      const elapsed = Math.floor((Date.now() - game.fgStartAt) / 1000)
+      setTimeLeft(Math.max(0, INPUT_TIME - elapsed))
+      timerRef.current = setInterval(() => setTimeLeft(t => Math.max(0, t - 1)), 1000)
+    } else if (phase === 'vote' && game?.fgVoteStartAt) {
+      const elapsed = Math.floor((Date.now() - game.fgVoteStartAt) / 1000)
+      setTimeLeft(Math.max(0, VOTE_TIME - elapsed))
+      timerRef.current = setInterval(() => setTimeLeft(t => Math.max(0, t - 1)), 1000)
+    }
     return () => clearInterval(timerRef.current)
-  }, [phase, game?.fgStartAt])
+  }, [phase, game?.fgStartAt, game?.fgVoteStartAt])
 
-  // Auto-advance: input phase done → voting
+  // Auto-advance: input phase done → voting (use elapsed time to avoid stale-zero fires)
   useEffect(() => {
-    if (phase !== 'input' || !isController || autoRef.current) return
-    if (timeLeft === 0 || submittedCount >= players.length) {
+    if (phase !== 'input' || !isController || autoRef.current || !game?.fgStartAt) return
+    const elapsed = Date.now() - game.fgStartAt
+    const timeExpired = elapsed >= INPUT_TIME * 1000
+    if (timeExpired || (players.length > 0 && submittedCount >= players.length)) {
       autoRef.current = true
       setTimeout(() => {
         startFillVoting(gameCode)
         autoRef.current = false
       }, 800)
     }
-  }, [timeLeft, submittedCount, players.length, phase, isController])
+  }, [timeLeft, submittedCount, players.length, phase, isController, game?.fgStartAt])
 
   // Auto-advance: vote phase done → results
   useEffect(() => {
-    if (phase !== 'vote' || !isController || autoRef.current) return
-    if (timeLeft === 0 || votedCount >= players.length) {
+    if (phase !== 'vote' || !isController || autoRef.current || !game?.fgVoteStartAt) return
+    const elapsed = Date.now() - game.fgVoteStartAt
+    const timeExpired = elapsed >= VOTE_TIME * 1000
+    if (timeExpired || (players.length > 0 && votedCount >= players.length)) {
       autoRef.current = true
       setTimeout(async () => {
         const t = await revealFillResults(gameCode, game)
@@ -112,7 +121,7 @@ export default function FillGapScreen() {
         playCorrect()
       }, 800)
     }
-  }, [timeLeft, votedCount, players.length, phase, isController])
+  }, [timeLeft, votedCount, players.length, phase, isController, game?.fgVoteStartAt])
 
   async function handleSubmit() {
     if (!myAnswer.trim() || submitted) return
@@ -158,7 +167,7 @@ export default function FillGapScreen() {
     <div className="screen">
       <div className="topbar">
         <div className="round-badge">{genre?.emoji} Fill the Gap</div>
-        <div className="topbar-logo" style={{ color: '#4cc9f0' }}>✏️ Fill the Gap</div>
+        <div className="topbar-logo" style={{ color: '#4cc9f0' }}>✏️ {promptNum}/{roundLimit}</div>
         <div className="row gap-8">
           <MuteButton />
           <button className="btn btn-ghost btn-sm" onClick={() => setShowSettings(true)}>⚙️</button>

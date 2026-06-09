@@ -48,6 +48,8 @@ export default function WhodunnitScreen() {
   const votes = game?.whodVotes || {}
   const players = Object.values(game?.players || {}).filter(p => p.role !== 'gamescreen')
   const genre = game?.currentGenre
+  const roundNum = game?.whodCount || 1
+  const roundLimit = game?.settings?.questionsPerRound || 3
 
   const iAmImposter = imposterId === myId
   const myPrompt = iAmImposter ? imposterPrompt : normalPrompt
@@ -134,7 +136,7 @@ export default function WhodunnitScreen() {
     <div className="screen">
       <div className="topbar">
         <div className="round-badge">{genre?.emoji} Whodunnit</div>
-        <div className="topbar-logo" style={{ color: '#4895ef' }}>🕵️ Whodunnit</div>
+        <div className="topbar-logo" style={{ color: '#4895ef' }}>🕵️ {roundNum}/{roundLimit}</div>
         <div className="row gap-8">
           <MuteButton />
           <button className="btn btn-ghost btn-sm" onClick={() => setShowSettings(true)}>⚙️</button>
@@ -360,9 +362,11 @@ export default function WhodunnitScreen() {
             {isController && (
               <div className="row gap-8">
                 <button className="btn btn-ghost flex-1" onClick={() => endWhodRound(gameCode)}>End Round</button>
-                <button className="btn btn-gold flex-1" onClick={() => { setResult(null); startWhodunnit(gameCode, game) }}>
-                  Play Again 🕵️
-                </button>
+                {roundNum < roundLimit && (
+                  <button className="btn btn-gold flex-1" onClick={() => { setResult(null); startWhodunnit(gameCode, game) }}>
+                    Next Round 🕵️
+                  </button>
+                )}
               </div>
             )}
 

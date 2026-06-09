@@ -1184,6 +1184,554 @@ function OrdersUpView({ game, players }) {
   )
 }
 
+// ── F-ART DIRECTION (TV) ─────────────────────────────────────────────────────
+function _fdTextColor(hex) {
+  if (!hex || hex.length < 7) return '#fff'
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16)
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.55 ? '#000' : '#fff'
+}
+function _fdAccuracy(h1, h2) {
+  if (!h1 || !h2 || h1.length < 7 || h2.length < 7) return 0
+  const r1=parseInt(h1.slice(1,3),16),g1=parseInt(h1.slice(3,5),16),b1=parseInt(h1.slice(5,7),16)
+  const r2=parseInt(h2.slice(1,3),16),g2=parseInt(h2.slice(3,5),16),b2=parseInt(h2.slice(5,7),16)
+  return Math.round((1 - Math.sqrt((r1-r2)**2+(g1-g2)**2+(b1-b2)**2) / 441.67) * 100)
+}
+
+function FartDirectionView({ game, players }) {
+  const phase      = game?.fdPhase
+  const target     = game?.fdTargetColor
+  const submissions = game?.fdSubmissions || {}
+  const scoreMap   = game?.fdScoreMap    || {}
+  const count      = game?.fdCount || 1
+  const limit      = game?.settings?.questionsPerRound || 5
+  const PICK_TIME  = 20
+
+  const [timeLeft, setTimeLeft] = useState(0)
+  const timerRef = useRef(null)
+
+  useEffect(() => {
+    clearInterval(timerRef.current)
+    if (phase !== 'pick' || !game?.fdPickStartAt) return
+    const tick = () => setTimeLeft(Math.max(0, Math.ceil(PICK_TIME - (Date.now() - game.fdPickStartAt) / 1000)))
+    tick()
+    timerRef.current = setInterval(tick, 500)
+    return () => clearInterval(timerRef.current)
+  }, [phase, game?.fdPickStartAt])
+
+  const MEDALS = ['🥇', '🥈', '🥉']
+  const RANK_COLS = ['#f4d03f', '#c0c0c0', '#cd7f32']
+
+  if (phase === 'show') {
+    const tc = _fdTextColor(target)
+    return (
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: target || '#222', position: 'relative' }}>
+        <motion.div
+          animate={{ opacity: [0.12, 0.3, 0.12] }} transition={{ duration: 1.6, repeat: Infinity }}
+          style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.18)' }}
+        />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20, position: 'relative' }}>
+          <motion.div animate={{ y: [0, -10, 0] }} transition={{ duration: 2, repeat: Infinity }} style={{ fontSize: '5rem' }}>🎨</motion.div>
+          <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(2rem, 5vw, 3.5rem)', color: tc, textShadow: tc === '#000' ? '0 2px 10px rgba(255,255,255,0.5)' : '0 2px 10px rgba(0,0,0,0.5)', textAlign: 'center', lineHeight: 1.2 }}>
+            REMEMBER<br />THIS COLOUR!
+          </div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1rem', color: tc, opacity: 0.6 }}>
+            Colour {count}/{limit}
+          </div>
+        </div>
+        <motion.div initial={{ width: '100%' }} animate={{ width: '0%' }} transition={{ duration: 4, ease: 'linear' }}
+          style={{ height: 8, background: tc === '#000' ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.5)' }} />
+      </div>
+    )
+  }
+
+  if (phase === 'pick') {
+    const submitted = Object.keys(submissions)
+    return (
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ height: 6, background: 'var(--surface2)', flexShrink: 0 }}>
+          <motion.div animate={{ width: `${(timeLeft / PICK_TIME) * 100}%` }} transition={{ duration: 0.9, ease: 'linear' }}
+            style={{ height: '100%', background: timeLeft <= 5 ? 'var(--red)' : '#a855f7' }} />
+        </div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20, padding: '20px 32px' }}>
+          <motion.div animate={{ scale: [1, 1.12, 1], rotate: [0, 8, -8, 0] }} transition={{ duration: 1.8, repeat: Infinity }}
+            style={{ fontSize: 'clamp(4rem, 10vw, 7rem)' }}>
+            💨
+          </motion.div>
+          <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(1.4rem, 3.5vw, 2.4rem)', textAlign: 'center', color: '#a855f7' }}>
+            Find the colour!
+          </div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.1rem', color: 'var(--text2)' }}>
+            {timeLeft}s · {submitted.length}/{players.length} locked in
+          </div>
+          {/* Player submission status */}
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'center', marginTop: 4 }}>
+            {players.map(p => {
+              const done = submissions[p.id]
+              return (
+                <motion.div key={p.id}
+                  animate={done ? { scale: [1, 1.15, 1] } : {}}
+                  transition={{ duration: 0.4 }}
+                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, opacity: done ? 1 : 0.45 }}
+                >
+                  <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={44} />
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: done ? '#a855f7' : 'var(--text3)' }}>
+                    {done ? '✅' : '⏳'}
+                  </div>
+                </motion.div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (phase === 'reveal') {
+    const ranked = players
+      .map(p => ({ ...p, ...(scoreMap[p.id] || { rank: 99, pts: 0, color: null }) }))
+      .sort((a, b) => a.rank - b.rank)
+
+    return (
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {/* Left — target colour */}
+        <div style={{ width: 200, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: '20px 16px', borderRight: '1px solid rgba(255,255,255,0.07)' }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>Target</div>
+          <motion.div
+            initial={{ scale: 0.7 }} animate={{ scale: 1 }}
+            transition={{ type: 'spring', stiffness: 350, damping: 22 }}
+            style={{ width: 120, height: 120, borderRadius: 20, background: target, border: '3px solid rgba(255,255,255,0.15)' }}
+          />
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--text3)' }}>{target?.toUpperCase()}</div>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
+            Colour {count}/{limit}
+          </div>
+        </div>
+
+        {/* Right — player results */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '16px 20px', gap: 8, overflow: 'auto' }}>
+          <div style={{ fontFamily: 'var(--font-head)', fontSize: '1rem', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+            💨 Results
+          </div>
+          {ranked.map((p, i) => {
+            const medal = MEDALS[p.rank - 1]
+            const rc = RANK_COLS[p.rank - 1] || 'var(--text3)'
+            const acc = p.color ? _fdAccuracy(target, p.color) : 0
+            return (
+              <motion.div key={p.id}
+                initial={{ opacity: 0, x: -14 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 + i * 0.07 }}
+                style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--surface)', borderRadius: 12, padding: '10px 14px', border: `1.5px solid ${p.rank === 1 ? 'rgba(244,208,63,0.35)' : 'var(--border)'}` }}
+              >
+                <div style={{ fontSize: '1.2rem', width: 28, textAlign: 'center' }}>{medal || `${p.rank}`}</div>
+                <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={36} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                  {p.color && (
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text3)' }}>
+                      {acc}% match
+                    </div>
+                  )}
+                </div>
+                {p.color && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: p.color, border: '2px solid rgba(255,255,255,0.12)', flexShrink: 0 }} />
+                    <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.85rem', color: p.pts > 0 ? rc : 'var(--text3)' }}>
+                      {p.pts > 0 ? `+${p.pts}` : '—'}
+                    </div>
+                  </div>
+                )}
+                {!p.color && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text3)' }}>No pick</div>}
+              </motion.div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div className="loading-dots"><span /><span /><span /></div>
+    </div>
+  )
+}
+
+// ── SPEED BRIEFS (TV) ────────────────────────────────────────────────────────
+function SpeedBriefsView({ game, players }) {
+  const phase = game?.sbPhase
+  const brief = game?.sbBrief
+  const submissions = game?.sbSubmissions || {}
+  const votes = game?.sbVotes || {}
+  const results = game?.sbResults
+  const round = game?.sbRound || 1
+  const roundLimit = game?.settings?.questionsPerRound || 5
+  const subIds = Object.keys(submissions).sort()
+
+  const revealIdx = game?.sbRevealIdx || 0
+  const currentRevealId = subIds[revealIdx]
+
+  // Vote tallies for display during results
+  const voteTotals = results?.voteTotals || {}
+  const ranked = results?.ranked || []
+  const medals = ['🥇', '🥈', '🥉']
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '16px 24px', gap: 14 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <div>
+          <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(1rem, 2.5vw, 1.5rem)', color: '#f72585' }}>
+            🩲 Speed Briefs — Round {round}/{roundLimit}
+          </div>
+          {brief && (
+            <div style={{ fontSize: '0.8rem', color: 'var(--text3)', marginTop: 2 }}>
+              {brief.emoji} {brief.name}
+            </div>
+          )}
+        </div>
+        <div style={{ fontSize: '0.75rem', color: 'var(--text3)', textAlign: 'right' }}>
+          <div style={{ textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, color: '#f72585' }}>
+            {phase === 'input' ? '✏️ Writing…' : phase === 'reveal' ? `Ad ${revealIdx + 1}/${subIds.length}` : phase === 'vote' ? '⭐ Voting' : phase === 'results' ? '🏆 Results' : '—'}
+          </div>
+          <div style={{ marginTop: 2 }}>{Object.keys(votes).length}/{players.filter(p => p.role !== 'gamescreen').length} voted</div>
+        </div>
+      </div>
+
+      {/* Input phase — show who has submitted */}
+      {phase === 'input' && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: '0.78rem', color: 'var(--text3)', textAlign: 'center', marginBottom: 4 }}>
+            Players are writing their taglines for <strong style={{ color: '#f72585' }}>{brief?.emoji} {brief?.name}</strong>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center' }}>
+            {players.filter(p => p.role !== 'gamescreen').map(p => {
+              const done = !!submissions[p.id]
+              return (
+                <div key={p.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, opacity: done ? 1 : 0.4 }}>
+                  <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={32} />
+                  <div style={{ fontSize: '0.6rem', color: done ? '#57cc99' : 'var(--text3)' }}>{done ? '✓' : '…'}</div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Reveal phase — billboard */}
+      {phase === 'reveal' && currentRevealId && brief && (
+        <div style={{ flex: 1, display: 'flex', gap: 20, alignItems: 'stretch', overflow: 'hidden' }}>
+          {/* Left: product panel */}
+          <div style={{ width: '38%', background: brief.color, borderRadius: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, flexShrink: 0 }}>
+            <div style={{ fontSize: 'clamp(4rem, 8vw, 7rem)', lineHeight: 1 }}>{brief.emoji}</div>
+            <div style={{ color: '#fff', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', textShadow: '0 2px 6px rgba(0,0,0,0.4)', fontSize: 'clamp(0.8rem, 1.8vw, 1.3rem)', marginTop: 10, textAlign: 'center' }}>
+              {brief.name}
+            </div>
+          </div>
+          {/* Right: tagline + player */}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentRevealId}
+              initial={{ opacity: 0, x: 30 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -30 }}
+              transition={{ duration: 0.35 }}
+              style={{ flex: 1, background: '#fff', borderRadius: 16, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: 'clamp(16px, 3vw, 32px)', overflow: 'hidden' }}
+            >
+              <div style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontSize: 'clamp(1.2rem, 3vw, 2.4rem)', color: '#111', lineHeight: 1.4, textAlign: 'center', marginBottom: 20 }}>
+                "{submissions[currentRevealId]}"
+              </div>
+              {game.players?.[currentRevealId] && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center' }}>
+                  <Avatar src={game.players[currentRevealId].avatar} name={game.players[currentRevealId].name} colorHex={game.players[currentRevealId].colorHex} size={28} />
+                  <span style={{ fontSize: '0.85rem', color: '#555', fontStyle: 'italic' }}>{game.players[currentRevealId].name}</span>
+                </div>
+              )}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* Vote phase — show all ads compactly */}
+      {phase === 'vote' && (
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text3)', textAlign: 'center' }}>Players are voting for their favourite ad</div>
+          <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center', alignContent: 'flex-start' }}>
+            {subIds.map(pid => {
+              const player = game.players?.[pid]
+              const hasVoted = !!votes[pid]
+              return (
+                <div key={pid} style={{ background: '#fff', borderRadius: 10, overflow: 'hidden', width: 'clamp(140px, 20vw, 200px)', opacity: 0.92 }}>
+                  <div style={{ height: 4, background: brief?.color }} />
+                  <div style={{ padding: '8px 10px' }}>
+                    <div style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontSize: 'clamp(0.65rem, 1.2vw, 0.82rem)', color: '#111', lineHeight: 1.4, marginBottom: 6 }}>
+                      "{submissions[pid]}"
+                    </div>
+                    {player && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <Avatar src={player.avatar} name={player.name} colorHex={player.colorHex} size={14} />
+                        <span style={{ fontSize: '0.55rem', color: '#888' }}>{player.name}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Results phase */}
+      {phase === 'results' && (
+        <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {ranked.map(({ pid, votes: v }, i) => {
+            const player = game.players?.[pid]
+            const pts = results?.scoreChanges?.[pid] || 0
+            return (
+              <motion.div
+                key={pid}
+                initial={{ opacity: 0, x: -16 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.06 }}
+                style={{ display: 'flex', gap: 12, alignItems: 'center', background: '#fff', borderRadius: 12, overflow: 'hidden' }}
+              >
+                <div style={{ width: 48, background: brief?.color, alignSelf: 'stretch', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem', flexShrink: 0 }}>
+                  {medals[i] || brief?.emoji}
+                </div>
+                <div style={{ flex: 1, padding: '10px 4px', minWidth: 0 }}>
+                  <div style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontSize: 'clamp(0.75rem, 1.5vw, 1rem)', color: '#111', lineHeight: 1.35, marginBottom: 4 }}>
+                    "{submissions[pid]}"
+                  </div>
+                  {player && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Avatar src={player.avatar} name={player.name} colorHex={player.colorHex} size={18} />
+                      <span style={{ fontSize: '0.7rem', color: '#888' }}>{player.name}</span>
+                    </div>
+                  )}
+                </div>
+                <div style={{ textAlign: 'right', padding: '10px 14px', flexShrink: 0 }}>
+                  {v > 0 && <div style={{ fontWeight: 700, fontSize: '0.85rem', color: i === 0 ? '#b8860b' : '#555' }}>{v} vote{v !== 1 ? 's' : ''}</div>}
+                  <div style={{ fontSize: '0.8rem', color: '#57cc99', fontWeight: 700 }}>+{pts}</div>
+                </div>
+              </motion.div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── MODEL MODEL UN (TV) ───────────────────────────────────────────────────────
+function ModelModelUNView({ game, players }) {
+  const phase = game?.mmuPhase
+  const nations = game?.mmuNations || {}
+  const missiles = game?.mmuMissiles || {}
+  const defense = game?.mmuDefense || {}
+  const alive = game?.mmuAlive || {}
+  const cards = game?.mmuCards || {}
+  const prizePool = game?.mmuPrizePool || 0
+  const round = game?.mmuRound || 1
+  const startAt = game?.mmuPhaseStartAt
+
+  const alivePlayers = Object.entries(alive).filter(([, v]) => v).map(([id]) => id)
+  const allPlayers = players.filter(p => p.role !== 'gamescreen')
+
+  const DURATIONS = { invest: 30, select: 30, espionage: 15, negotiate: 60, resolve: 15, card: 6 }
+  const totalSecs = DURATIONS[phase] || 0
+  const [timeLeft, setTimeLeft] = useState(totalSecs)
+  const timerRef = useRef(null)
+
+  useEffect(() => {
+    clearInterval(timerRef.current)
+    if (!startAt || !totalSecs) return
+    const tick = () => setTimeLeft(Math.max(0, Math.ceil(totalSecs - (Date.now() - startAt) / 1000)))
+    tick()
+    timerRef.current = setInterval(tick, 500)
+    return () => clearInterval(timerRef.current)
+  }, [phase, startAt, totalSecs])
+
+  // Resolve phase: fire off events at their delays
+  // firedEvents = missile launched (for in-flight indicator)
+  // landedEvents = missile landed/exploded 1.4s later (for hit/save animation)
+  const resolution = game?.mmuResolution
+  const [firedEvents, setFiredEvents] = useState([])
+  const [landedEvents, setLandedEvents] = useState([])
+  useEffect(() => {
+    if (phase !== 'resolve' || !resolution?.events || !startAt) return
+    setFiredEvents([])
+    setLandedEvents([])
+    const timers = []
+    resolution.events.forEach((evt, i) => {
+      const evtTagged = { ...evt, _i: i }
+      const when = Math.max(0, (startAt + evt.delay) - Date.now())
+      timers.push(setTimeout(() => setFiredEvents(prev => [...prev, evtTagged]), when))
+      timers.push(setTimeout(() => setLandedEvents(prev => [...prev, evtTagged]), when + 1400))
+    })
+    return () => timers.forEach(clearTimeout)
+  }, [phase, startAt])
+
+  const PHASE_INFO = {
+    rules:      { icon: '📜', label: 'Briefing', color: '#c2773a' },
+    invest:     { icon: '⚡', label: `Phase 1 — Arms Race · Round ${round}`, color: '#c2773a' },
+    select:     { icon: '🎯', label: 'Phase 2 — Target Selection', color: '#e63946' },
+    espionage:  { icon: '🔍', label: 'Phase 3 — Intelligence', color: '#a855f7' },
+    negotiate:  { icon: '🤝', label: 'Phase 4 — Negotiation', color: '#57cc99' },
+    resolve:    { icon: '💥', label: 'Phase 5 — Resolution', color: '#e63946' },
+    card:       { icon: '🃏', label: 'Special Cards', color: 'var(--gold)' },
+    splitsteal: { icon: '⚔️', label: 'Final Ultimatum', color: 'var(--gold)' },
+    truce:      { icon: '🕊️', label: 'Peace Treaty', color: '#57cc99' },
+    gameover:   { icon: '🏆', label: 'GAME OVER', color: 'var(--gold)' },
+  }
+  const info = PHASE_INFO[phase] || { icon: '🧱', label: 'Model Model UN', color: '#c2773a' }
+
+  // Nations grid
+  function NationCard({ playerId }) {
+    const nation = nations[playerId]
+    const isAlive = alive[playerId] !== false
+    const card = cards[playerId]
+    // Use landedEvents for hit/save (after missile animation completes)
+    const hitLanded = landedEvents.filter(e => e.target === playerId && e.type === 'hit')
+    const savedLanded = landedEvents.filter(e => e.target === playerId && (e.type === 'intercepted' || e.type === 'shielded'))
+    const wasJustHit = hitLanded.length > 0
+    const wasJustSaved = savedLanded.length > 0 && !wasJustHit
+    // Missiles in-flight toward this nation
+    const flyingHere = firedEvents.filter(e => e.target === playerId && !landedEvents.some(l => l._i === e._i))
+    const inFlight = flyingHere.length > 0
+    const p = players.find(pl => pl.id === playerId)
+
+    return (
+      <motion.div
+        animate={wasJustHit ? { scale: [1, 1.2, 0.85, 1], rotate: [0, -8, 8, 0] } : wasJustSaved ? { scale: [1, 1.1, 1] } : inFlight ? { scale: [1, 0.96, 1] } : {}}
+        transition={{ duration: inFlight ? 0.3 : 0.5, repeat: inFlight ? Infinity : 0 }}
+        style={{
+          position: 'relative', overflow: 'visible',
+          background: wasJustHit ? 'rgba(230,57,70,0.25)' : wasJustSaved ? 'rgba(87,204,153,0.18)' : inFlight ? 'rgba(230,57,70,0.08)' : isAlive ? 'var(--surface)' : 'rgba(255,255,255,0.03)',
+          border: `1.5px solid ${wasJustHit ? '#e63946' : wasJustSaved ? '#57cc99' : inFlight ? 'rgba(230,57,70,0.5)' : isAlive ? 'var(--border2)' : 'transparent'}`,
+          borderRadius: 12, padding: '10px 12px', opacity: isAlive ? 1 : 0.3,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, minWidth: 100,
+        }}>
+        {/* Incoming missile indicator */}
+        <AnimatePresence>
+          {inFlight && flyingHere.map((e, mi) => (
+            <motion.div
+              key={`fly-${e._i}`}
+              initial={{ y: -36, x: (mi % 3 - 1) * 12, opacity: 1, rotate: 175 }}
+              animate={{ y: 6, opacity: 1 }}
+              exit={{ scale: 2, opacity: 0 }}
+              transition={{ duration: 1.0, ease: 'easeIn' }}
+              style={{ position: 'absolute', top: -12, fontSize: 'clamp(0.9rem, 1.8vw, 1.3rem)', pointerEvents: 'none', zIndex: 20, filter: 'drop-shadow(0 0 6px #e63946)' }}
+            >
+              🚀
+            </motion.div>
+          ))}
+        </AnimatePresence>
+        <div style={{ fontSize: 'clamp(1.4rem, 3vw, 2rem)' }}>
+          {!isAlive ? '💥' : wasJustHit ? '💥' : nation?.emoji || '🏛️'}
+        </div>
+        {p && <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={28} />}
+        <div style={{ fontWeight: 700, fontSize: 'clamp(0.55rem, 1.2vw, 0.72rem)', textAlign: 'center', lineHeight: 1.3, color: isAlive ? 'var(--text1)' : 'var(--text3)' }}>
+          {nation?.name || playerId}
+        </div>
+        {isAlive && (
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'clamp(0.55rem, 1.1vw, 0.68rem)', color: 'var(--text3)' }}>
+            🚀{missiles[playerId] ?? 0} · 🛡️{defense[playerId] ?? 10}%
+          </div>
+        )}
+        {isAlive && card && (
+          <div style={{ fontSize: '0.7rem', color: 'var(--gold)' }} title="Has a card">🃏</div>
+        )}
+        {wasJustSaved && <div style={{ fontSize: '0.9rem' }}>🛡️</div>}
+      </motion.div>
+    )
+  }
+
+  const PHASE_INSTRUCTIONS = {
+    rules:      'Players are reading the rules. Host will start the game shortly.',
+    invest:     'Nations are deciding whether to buy missiles, upgrade defences, or save their 50pt budget.',
+    select:     'Nations are secretly selecting their targets. No peeking!',
+    espionage:  'Spy networks are active. Each nation receives one piece of intelligence — 25% may be fabricated.',
+    negotiate:  'Diplomats are talking. Players can see all shared intel and adjust their targets. Players may propose a truce.',
+    resolve:    'MISSILES IN THE AIR! Watch the villages carefully…',
+    card:       'Special intelligence cards are being distributed for next round.',
+    splitsteal: 'Two nations remain. They must choose: sign a truce, or launch a final strike.',
+    gameover:   'The conflict is over. Calculating final scores…',
+  }
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Timer bar */}
+      {totalSecs > 0 && (
+        <div style={{ height: 5, background: 'var(--surface2)', flexShrink: 0 }}>
+          <motion.div style={{ height: '100%', background: timeLeft <= 5 ? '#e63946' : info.color, width: `${(timeLeft / totalSecs) * 100}%` }}
+            transition={{ duration: 0.8, ease: 'linear' }} />
+        </div>
+      )}
+
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '16px 20px', gap: 14 }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '1.5rem' }}>{info.icon}</span>
+              <span style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(0.9rem, 2vw, 1.3rem)', color: info.color }}>{info.label}</span>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text3)', marginTop: 2 }}>
+              {PHASE_INSTRUCTIONS[phase] || ''}
+            </div>
+          </div>
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.4rem', color: timeLeft <= 5 && totalSecs > 0 ? '#e63946' : 'var(--text2)' }}>
+              {totalSecs > 0 ? `${timeLeft}s` : ''}
+            </div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text3)' }}>🏆 Pool: {prizePool}pts</div>
+          </div>
+        </div>
+
+        {/* Nations grid */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center' }}>
+          {allPlayers.map(p => <NationCard key={p.id} playerId={p.id} />)}
+        </div>
+
+        {/* Resolve phase event log — shows when missile lands */}
+        {phase === 'resolve' && landedEvents.length > 0 && (
+          <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Events</div>
+            <AnimatePresence>
+              {landedEvents.map((e, i) => {
+                const attNation = nations[e.attacker]
+                const tgtNation = nations[e.target]
+                let text = ''
+                if (e.type === 'hit') text = `💥 ${attNation?.emoji || '?'} ${attNation?.name} destroyed ${tgtNation?.emoji || '?'} ${tgtNation?.name}${e.heatseeker ? ' (Heatseeker!)' : ''}!`
+                else if (e.type === 'intercepted') text = `🛡️ ${tgtNation?.emoji || '?'} ${tgtNation?.name} intercepted a missile from ${attNation?.emoji || '?'} ${attNation?.name}!`
+                else if (e.type === 'shielded') text = `🛡️ ${tgtNation?.emoji || '?'} ${tgtNation?.name}'s Shield blocked a missile from ${attNation?.emoji || '?'} ${attNation?.name}!`
+                else if (e.type === 'wasted') text = `🚀 A missile from ${attNation?.emoji || '?'} ${attNation?.name} had no target.`
+                return (
+                  <motion.div key={i} initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
+                    style={{ fontSize: '0.78rem', padding: '4px 8px', background: 'var(--surface2)', borderRadius: 6, color: e.type === 'hit' ? '#e63946' : e.type === 'wasted' ? 'var(--text3)' : '#57cc99' }}>
+                    {text}
+                  </motion.div>
+                )
+              })}
+            </AnimatePresence>
+          </div>
+        )}
+
+        {/* Split/Steal result */}
+        {phase === 'gameover' && game.mmuSplitResult && (
+          <div style={{ background: 'rgba(244,208,63,0.08)', border: '1px solid rgba(244,208,63,0.2)', borderRadius: 10, padding: '12px 16px', textAlign: 'center' }}>
+            {(() => {
+              const { stealers, splitters } = game.mmuSplitResult
+              if (stealers.length === 0) return <div style={{ color: '#57cc99', fontWeight: 700 }}>🕊️ Both nations signed the peace treaty — pot split equally!</div>
+              if (stealers.length === 2) return <div style={{ color: '#e63946', fontWeight: 700 }}>💣 Both nations attacked — the prize pot was destroyed!</div>
+              const stealerNation = nations[stealers[0]]
+              return <div style={{ color: 'var(--gold)', fontWeight: 700 }}>⚔️ {stealerNation?.emoji} {stealerNation?.name} launched the final strike and claims the prize pot!</div>
+            })()}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── LAWYERS COURTROOM (TV) ────────────────────────────────────────────────────
 function TVCourtroomScene({ defender, prosecutor, audience, speakingId, phase }) {
   const isDefSpeaking  = !!speakingId && speakingId === defender?.id
@@ -1607,8 +2155,11 @@ export default function GameScreen() {
     else if (gameType === 'hottake') stateLabel = `🔥 Statement ${(game.htPromptCount || 0) + 1}/${game.settings?.questionsPerRound || '?'}`
     else if (gameType === 'fill')    stateLabel = `✏️ Round ${game.fgPromptCount || 1}/${game.settings?.questionsPerRound || '?'}`
     else if (gameType === 'whod')       stateLabel = `🕵️ Case ${game.whodCount || 1}/${game.settings?.questionsPerRound || '?'}`
-    else if (gameType === 'truefalse')  stateLabel = `🤔 ${game.tfCount || 1}/${game.settings?.questionsPerRound || '?'}`
-    else if (gameType === 'ordersup')   stateLabel = `🍔 Order ${game.ouCount || 1}/${game.settings?.questionsPerRound || '?'}`
+    else if (gameType === 'truefalse')     stateLabel = `🤔 ${game.tfCount || 1}/${game.settings?.questionsPerRound || '?'}`
+    else if (gameType === 'ordersup')      stateLabel = `🍔 Order ${game.ouCount || 1}/${game.settings?.questionsPerRound || '?'}`
+    else if (gameType === 'fartdirection')  stateLabel = `💨 Colour ${game.fdCount || 1}/${game.settings?.questionsPerRound || '?'}`
+    else if (gameType === 'speedbriefs')   stateLabel = `🩲 Brief ${game.sbRound || 1}/${game.settings?.questionsPerRound || '?'} · ${game.sbPhase || '—'}`
+    else if (gameType === 'modelmodelun')  stateLabel = `🧱 Round ${game.mmuRound || 1} · ${game.mmuPhase || '—'}`
     else stateLabel = `Q${(game.currentQIndex || 0) + 1}/${game.settings?.questionsPerRound || '?'}`
   } else if (state === 'lawyers')        stateLabel = `⚖️ Case ${game.lawyersRound || 1}/${game.lawyersTotalRounds || 3}`
   else if (state === 'round-pick' || state === 'vote') stateLabel = 'Voting'
@@ -1636,8 +2187,11 @@ export default function GameScreen() {
         case 'hottake': return <HotTakeView game={game} players={players} />
         case 'fill':       return <FillGapView game={game} players={players} />
         case 'whod':       return <WhodunnitView game={game} players={players} />
-        case 'truefalse':  return <TrueFalseView game={game} players={players} />
-        case 'ordersup':   return <OrdersUpView game={game} players={players} />
+        case 'truefalse':     return <TrueFalseView game={game} players={players} />
+        case 'ordersup':      return <OrdersUpView game={game} players={players} />
+        case 'fartdirection':  return <FartDirectionView game={game} players={players} />
+        case 'speedbriefs':    return <SpeedBriefsView game={game} players={players} />
+        case 'modelmodelun':   return <ModelModelUNView game={game} players={players} />
         default:           return <QuizView game={game} players={players} />
       }
     }

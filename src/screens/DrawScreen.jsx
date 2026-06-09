@@ -54,8 +54,10 @@ export default function DrawScreen() {
     if (!players.length) return
     const drawer = players[promptIndex % players.length]
     const genreData = getGenreById(genre?.id)
-    const prompts = genreData?.questions || []
-    const prompt = prompts[promptIndex % Math.max(prompts.length, 1)]?.q || 'A cat playing piano'
+    // draw genre stores plain string prompts; quiz genres use {q, a, hint} objects
+    const rawPrompts = genreData?.prompts || genreData?.questions || []
+    const rawPrompt = rawPrompts[promptIndex % Math.max(rawPrompts.length, 1)]
+    const prompt = (typeof rawPrompt === 'string' ? rawPrompt : rawPrompt?.q) || 'A cat playing piano'
     update(ref(db, `games/${gameCode}`), {
       drawerId: drawer.id,
       drawPrompt: prompt,
@@ -72,7 +74,6 @@ export default function DrawScreen() {
       if (g.state === 'round-over') setScreen('round-over')
       if (g.state === 'round-pick') setScreen('round-pick')
       if (g.state === 'final') setScreen('final')
-      if (g.state === 'quiz') setScreen('quiz-host')
     })
     return unsub
   }, [gameCode])

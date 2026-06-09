@@ -12,7 +12,7 @@ import { useGame } from '../hooks/useGame'
 import { ALL_GENRES, GAME_TYPES } from '../data/genres'
 import { db, ref, update } from '../firebase'
 
-const GAME_TYPE_ORDER = ['quiz','blitz','fill','draw','music','joke','hottake','whod','redemption','lawyers','truefalse','ordersup']
+const GAME_TYPE_ORDER = ['quiz','blitz','fill','draw','music','joke','hottake','whod','redemption','lawyers','truefalse','ordersup','fartdirection','speedbriefs','modelmodelun']
 
 export default function DevAdminScreen() {
   const store = useStore()
@@ -34,7 +34,7 @@ export default function DevAdminScreen() {
     try {
       const hostName = store.myName || 'Dev Host'
       const { code } = await createGame(hostName, {
-        questionsPerRound: 3,
+        questionsPerRound: 5,
         totalRounds: 1,
         questionMaster: false,
         timers: { quizQuestion: 60, quizAnswer: 25, genreVote: 30 },

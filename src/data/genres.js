@@ -23,7 +23,10 @@ export const GAME_TYPES = {
   redemption: { id: 'redemption', label: 'Redemption Arc',  icon: '⚡',  desc: 'Second chance on questions you got wrong — 1.25× points' },
   lawyers:    { id: 'lawyers',    label: 'Outlandish Lawyers', icon: '⚖️',  desc: 'Debate an absurd statement — audience votes who was most convincing' },
   truefalse:  { id: 'truefalse', label: 'True or False',      icon: '🤔',  desc: 'Strange but true (or false) — everyone guesses simultaneously' },
-  ordersup:   { id: 'ordersup',  label: "Orders Up!",          icon: '🍔',  desc: "Memorise the full order — then put 3 items back in the right sequence" },
+  ordersup:      { id: 'ordersup',      label: "Orders Up!",      icon: '🍔',  desc: "Memorise the full order — then put 3 items back in the right sequence" },
+  fartdirection:   { id: 'fartdirection',   label: 'F-Art Direction',   icon: '💨',  desc: "Spot the colour — then a fart steals it. Find it again on the colour wheel!" },
+  speedbriefs:     { id: 'speedbriefs',     label: 'Speed Briefs',      icon: '🩲',  desc: "Write the world's greatest one-liner for the world's strangest pants." },
+  modelmodelun:    { id: 'modelmodelun',    label: 'Model Model UN',    icon: '🧱',  desc: "Build your ceramic nation, fire missiles, spy on rivals — last model standing wins the prize pot!" },
   // ── Planned / coming soon ──────────────────────────────────────────────────────
   // pitch:     Sell the most ridiculous product using a random word combo (Jackbox: Patently Stupid)
   // twotruth:  Two Truths & A Lie — everyone submits 3 statements, group guesses the lie
@@ -828,6 +831,37 @@ export const CREATIVE_GENRES = [
       { label: 'BBQ Shack',           items: ['3 rack of ribs', '7 corn on the cobs', '2 pulled pork sandwiches', '4 coleslaw', '6 beers', '1 banana pudding'] },
       { label: 'Japanese Ramen Bar',  items: ['4 tonkotsu ramens', '2 gyoza plates', '3 matcha teas', '1 karaage chicken', '5 rice balls'] },
     ],
+  },
+  // ─── F-Art Direction ───────────────────────────────────────────────────────
+  // Colours generated randomly each question — no preset data needed.
+  {
+    id: 'fartdirection',
+    name: 'F-Art Direction',
+    emoji: '💨',
+    gameType: 'fartdirection',
+    color: '#a855f7',
+    category: 'creative',
+    // No questions array — random HSL colours generated at runtime
+  },
+  {
+    id: 'modelmodelun',
+    name: 'Model Model UN',
+    emoji: '🧱',
+    gameType: 'modelmodelun',
+    color: '#c2773a',
+    category: 'strategy',
+    minPlayers: 2,
+    // No questions array — procedural diplomacy/arms race game
+  },
+  {
+    id: 'speedbriefs',
+    name: 'Speed Briefs',
+    emoji: '🩲',
+    gameType: 'speedbriefs',
+    color: '#f72585',
+    category: 'creative',
+    minPlayers: 3,
+    // No questions array — brief selected at runtime from sbBriefs.js
   },
 ]
 

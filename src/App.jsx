@@ -30,6 +30,9 @@ import OutlandishLawyersScreen from './screens/OutlandishLawyersScreen'
 import FillGapScreen from './screens/FillGapScreen'
 import TrueFalseScreen from './screens/TrueFalseScreen'
 import OrdersUpScreen from './screens/OrdersUpScreen'
+import FartDirectionScreen from './screens/FartDirectionScreen'
+import SpeedBriefsScreen from './screens/SpeedBriefsScreen'
+import ModelModelUNScreen from './screens/ModelModelUNScreen'
 
 const SCREENS = {
   home: HomeScreen,
@@ -77,8 +80,11 @@ function getGameScreen(myRole, gameType) {
     case 'redemption': return RedemptionArcScreen
     case 'lawyers':    return OutlandishLawyersScreen
     case 'fill':       return FillGapScreen
-    case 'truefalse':  return TrueFalseScreen
-    case 'ordersup':   return OrdersUpScreen
+    case 'truefalse':      return TrueFalseScreen
+    case 'ordersup':       return OrdersUpScreen
+    case 'fartdirection':  return FartDirectionScreen
+    case 'speedbriefs':    return SpeedBriefsScreen
+    case 'modelmodelun':   return ModelModelUNScreen
     default:
       // Standard quiz/blitz/fill — players and host get different screens
       return myRole === 'player' ? QuizPlayerScreen : QuizHostScreen

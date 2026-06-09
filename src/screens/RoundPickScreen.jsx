@@ -171,7 +171,7 @@ export default function RoundPickScreen() {
     setWinner(genre)
 
     await new Promise(r => setTimeout(r, 1200))
-    await selectGenre(gameCode, genre.id, genre.name, genre.emoji, genre.gameType, genre.color)
+    await selectGenre(gameCode, game, genre.id, genre.name, genre.emoji, genre.gameType, genre.color)
   }
 
   const currentRound = game?.currentRound || 1

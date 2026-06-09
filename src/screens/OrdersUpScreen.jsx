@@ -65,23 +65,26 @@ export default function OrdersUpScreen() {
     return () => clearInterval(timerRef.current)
   }, [phase, game?.ouStartAt, game?.ouOrderStart])
 
-  // Auto-advance: memorize → order when timer hits 0
+  // Auto-advance: memorize → order when actual elapsed time >= MEM_TIME
   useEffect(() => {
-    if (phase !== 'memorize' || !isController || autoRef.current) return
-    if (timeLeft === 0) {
+    if (phase !== 'memorize' || !isController || autoRef.current || !game?.ouStartAt) return
+    const elapsed = Date.now() - game.ouStartAt
+    if (elapsed >= MEM_TIME * 1000) {
       autoRef.current = true
       setTimeout(() => advanceOUPhase(gameCode, 'memorize'), 400)
     }
-  }, [timeLeft, phase, isController])
+  }, [timeLeft, phase, isController, game?.ouStartAt])
 
-  // Auto-reveal: order → reveal when timer hits 0 or all submitted
+  // Auto-reveal: order → reveal when actual elapsed time >= ORDER_TIME or all submitted
   useEffect(() => {
-    if (phase !== 'order' || !isController || autoRef.current) return
-    if (timeLeft === 0 || totalDone >= players.length) {
+    if (phase !== 'order' || !isController || autoRef.current || !game?.ouOrderStart) return
+    const elapsed = Date.now() - game.ouOrderStart
+    const timeExpired = elapsed >= ORDER_TIME * 1000
+    if (timeExpired || (players.length > 0 && totalDone >= players.length)) {
       autoRef.current = true
       setTimeout(() => handleReveal(), 600)
     }
-  }, [timeLeft, totalDone, players.length, phase, isController])
+  }, [timeLeft, totalDone, players.length, phase, isController, game?.ouOrderStart])
 
   // Subscribe
   useEffect(() => {
