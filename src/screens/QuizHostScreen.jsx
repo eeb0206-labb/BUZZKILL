@@ -183,7 +183,7 @@ export default function QuizHostScreen() {
           clearInterval(questionTimerRef.current)
           if (!autoAdvancingRef.current) {
             autoAdvancingRef.current = true
-            nextQuestion(gameCode, game, questionsRef.current).then(() => {
+            nextQuestion(gameCode, game, questionsRef.current).finally(() => {
               autoAdvancingRef.current = false
             })
           }
@@ -197,16 +197,19 @@ export default function QuizHostScreen() {
 
   // ── Auto-advance: correct answer accepted ────────────────────────────────────
   useEffect(() => {
-    if (isQM) return
+    if (!isController || isQM) return
     if (!game?.answerRevealed || game?.buzzer) return
     if (autoAdvancingRef.current) return
     autoAdvancingRef.current = true
     const t = setTimeout(async () => {
-      await nextQuestion(gameCode, game, questionsRef.current)
-      autoAdvancingRef.current = false
+      try {
+        await nextQuestion(gameCode, game, questionsRef.current)
+      } finally {
+        autoAdvancingRef.current = false
+      }
     }, 1500)
-    return () => clearTimeout(t)
-  }, [isQM, game?.answerRevealed, game?.buzzer, gameCode])
+    return () => { clearTimeout(t); autoAdvancingRef.current = false }
+  }, [isController, isQM, game?.answerRevealed, game?.buzzer, gameCode])
 
   // ── Auto-advance: ALL eligible players guessed wrong ─────────────────────────
   useEffect(() => {
@@ -218,8 +221,11 @@ export default function QuizHostScreen() {
     if (autoAdvancingRef.current) return
     autoAdvancingRef.current = true
     const t = setTimeout(async () => {
-      await nextQuestion(gameCode, game, questionsRef.current)
-      autoAdvancingRef.current = false
+      try {
+        await nextQuestion(gameCode, game, questionsRef.current)
+      } finally {
+        autoAdvancingRef.current = false
+      }
     }, 2000)
     return () => { clearTimeout(t); autoAdvancingRef.current = false }
   }, [wrongAnswerers.length, allParticipants.length, game?.buzzer, game?.answerRevealed, isController, gameCode])

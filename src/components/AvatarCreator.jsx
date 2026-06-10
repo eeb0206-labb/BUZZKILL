@@ -244,8 +244,8 @@ export default function AvatarCreator({ config, onChange, photoSrc, onPhotoChang
                   Add a selfie — it appears as a comically large bobblehead on your avatar.
                 </div>
 
-                {/* Has photo + not retaking */}
-                {photoSrc && !showCapture && (
+                {/* Has photo */}
+                {photoSrc && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                     <img
                       src={photoSrc}
@@ -267,24 +267,27 @@ export default function AvatarCreator({ config, onChange, photoSrc, onPhotoChang
                   </div>
                 )}
 
-                {/* Camera capture — shown when no photo, or when retaking */}
-                {(!photoSrc || showCapture) && (
-                  <div>
-                    {showCapture && (
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        style={{ marginBottom: 10 }}
-                        onClick={() => setShowCapture(false)}
-                      >← Cancel</button>
-                    )}
-                    <CameraCapture
-                      onCapture={photo => {
-                        onPhotoChange?.(photo)
-                        setShowCapture(false)
-                      }}
-                      onSkip={null}
-                    />
-                  </div>
+                {/* No photo — big camera button */}
+                {!photoSrc && (
+                  <motion.button
+                    className="btn btn-primary"
+                    whileTap={{ scale: 0.96 }}
+                    onClick={() => setShowCapture(true)}
+                    style={{ width: '100%', padding: '14px 20px', fontSize: '1rem', gap: 10 }}
+                  >
+                    <span style={{ fontSize: '1.4rem' }}>📷</span> Take a Selfie
+                  </motion.button>
+                )}
+
+                {/* Full-screen camera overlay */}
+                {showCapture && (
+                  <CameraCapture
+                    onCapture={photo => {
+                      onPhotoChange?.(photo)
+                      setShowCapture(false)
+                    }}
+                    onSkip={() => setShowCapture(false)}
+                  />
                 )}
               </div>
 

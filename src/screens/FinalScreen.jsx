@@ -1,9 +1,12 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useStore } from '../store'
 import { Podium, Confetti, Toast, MuteButton } from '../components/ui'
 import { useSound } from '../hooks/useSound'
 import { useGame } from '../hooks/useGame'
+import BuzzHost from '../components/BuzzHost'
+import { getBuzzQuip } from '../data/hostQuips'
+import { useShouldBuzzSpeak } from '../hooks/useBuzzSpeech'
 
 export default function FinalScreen() {
   const store = useStore()
@@ -28,6 +31,19 @@ export default function FinalScreen() {
   const winner = sorted[0]
   const me = players.find(p => p.id === myId)
   const myRank = sorted.findIndex(p => p.id === myId) + 1
+  const settings = store.getSettings()
+  const aiHost = settings.aiHost ?? true
+  const shouldSpeak = useShouldBuzzSpeak(game)
+
+  const buzzQuip = useMemo(() => {
+    if (!aiHost || !winner) return null
+    const loser = sorted[sorted.length - 1]
+    return getBuzzQuip('gameEnd', {
+      gameCode: store.gameCode,
+      winner: winner.name,
+      loser: loser?.name,
+    })
+  }, [aiHost, winner?.name])
 
   async function handlePlayAgain() {
     if (goingBack) return
@@ -62,6 +78,18 @@ export default function FinalScreen() {
       </div>
 
       <div className="screen-inner center">
+        {/* Buzz final verdict */}
+        {aiHost && buzzQuip && (
+          <motion.div
+            style={{ width: '100%' }}
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+          >
+            <BuzzHost quip={buzzQuip} featured visible event="correct" speakOnChange={shouldSpeak} />
+          </motion.div>
+        )}
+
         {/* Winner announcement */}
         {winner && (
           <motion.div

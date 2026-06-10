@@ -17,11 +17,17 @@
  *      fill          → FillGapView
  *      whod          → WhodunnitView
  */
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useStore } from '../store'
 import { useGame } from '../hooks/useGame'
+import { useSound } from '../hooks/useSound'
 import { Avatar, QRCode } from '../components/ui'
+import { getGenreById, GAME_TYPES } from '../data/genres'
+import SettingsOverlay from '../components/SettingsOverlay'
+import BuzzHost from '../components/BuzzHost'
+import { getBuzzQuip } from '../data/hostQuips'
+import { useBuzzSpeech } from '../hooks/useBuzzSpeech'
 
 const POWERUP_ICONS = { sneakPeek: '🔍', steal: '🤑', imposter: '😈', plagiarism: '📋', block: '🚫', doublePoints: '✖️' }
 
@@ -1583,66 +1589,170 @@ function ModelModelUNView({ game, players }) {
   }
   const info = PHASE_INFO[phase] || { icon: '🧱', label: 'Model Model UN', color: '#c2773a' }
 
+  // Village items for a given nation emoji
+  const VILLAGE_ITEMS_GS = {
+    '🧱': ['🏗️', '🔩'], '🏺': ['🌿', '🫙'], '🏛️': ['🌲', '🏚️'],
+    '📜': ['📚', '🏚️'], '🏆': ['🌲', '🏠'], '🫙': ['🌿', '🏚️'],
+    '🌍': ['🌲', '🏠'], '✏️': ['📐', '🌿'],
+  }
+  function getVillageItemsGS(emoji) {
+    return VILLAGE_ITEMS_GS[emoji] || ['🌲', '🏚️']
+  }
+
   // Nations grid
   function NationCard({ playerId }) {
     const nation = nations[playerId]
     const isAlive = alive[playerId] !== false
     const card = cards[playerId]
-    // Use landedEvents for hit/save (after missile animation completes)
     const hitLanded = landedEvents.filter(e => e.target === playerId && e.type === 'hit')
-    const savedLanded = landedEvents.filter(e => e.target === playerId && (e.type === 'intercepted' || e.type === 'shielded'))
+    const savedShield = landedEvents.filter(e => e.target === playerId && e.type === 'shielded')
+    const savedIntercept = landedEvents.filter(e => e.target === playerId && e.type === 'intercepted')
     const wasJustHit = hitLanded.length > 0
-    const wasJustSaved = savedLanded.length > 0 && !wasJustHit
-    // Missiles in-flight toward this nation
+    const wasJustShielded = savedShield.length > 0 && !wasJustHit
+    const wasJustIntercepted = savedIntercept.length > 0 && !wasJustHit
+    const wasJustSaved = wasJustShielded || wasJustIntercepted
     const flyingHere = firedEvents.filter(e => e.target === playerId && !landedEvents.some(l => l._i === e._i))
     const inFlight = flyingHere.length > 0
     const p = players.find(pl => pl.id === playerId)
+    const villageItems = getVillageItemsGS(nation?.emoji)
 
     return (
-      <motion.div
-        animate={wasJustHit ? { scale: [1, 1.2, 0.85, 1], rotate: [0, -8, 8, 0] } : wasJustSaved ? { scale: [1, 1.1, 1] } : inFlight ? { scale: [1, 0.96, 1] } : {}}
-        transition={{ duration: inFlight ? 0.3 : 0.5, repeat: inFlight ? Infinity : 0 }}
-        style={{
-          position: 'relative', overflow: 'visible',
-          background: wasJustHit ? 'rgba(230,57,70,0.25)' : wasJustSaved ? 'rgba(87,204,153,0.18)' : inFlight ? 'rgba(230,57,70,0.08)' : isAlive ? 'var(--surface)' : 'rgba(255,255,255,0.03)',
-          border: `1.5px solid ${wasJustHit ? '#e63946' : wasJustSaved ? '#57cc99' : inFlight ? 'rgba(230,57,70,0.5)' : isAlive ? 'var(--border2)' : 'transparent'}`,
-          borderRadius: 12, padding: '10px 12px', opacity: isAlive ? 1 : 0.3,
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, minWidth: 100,
-        }}>
-        {/* Incoming missile indicator */}
+      <div style={{
+        position: 'relative', overflow: 'visible',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        gap: 4, minWidth: 'clamp(80px, 11vw, 130px)',
+        opacity: isAlive ? 1 : 0.28, transition: 'opacity 0.4s',
+      }}>
+        {/* Missile in-flight overlay */}
         <AnimatePresence>
-          {inFlight && flyingHere.map((e, mi) => (
-            <motion.div
-              key={`fly-${e._i}`}
-              initial={{ y: -36, x: (mi % 3 - 1) * 12, opacity: 1, rotate: 175 }}
-              animate={{ y: 6, opacity: 1 }}
-              exit={{ scale: 2, opacity: 0 }}
-              transition={{ duration: 1.0, ease: 'easeIn' }}
-              style={{ position: 'absolute', top: -12, fontSize: 'clamp(0.9rem, 1.8vw, 1.3rem)', pointerEvents: 'none', zIndex: 20, filter: 'drop-shadow(0 0 6px #e63946)' }}
-            >
-              🚀
-            </motion.div>
-          ))}
+          {inFlight && flyingHere.map((e, mi) => {
+            const fromLeft = mi % 2 === 0
+            return (
+              <motion.div
+                key={`fly-${e._i}`}
+                initial={{ x: fromLeft ? -50 : 50, y: -60, rotate: fromLeft ? 150 : 210, opacity: 0 }}
+                animate={{ x: 0, y: 15, rotate: fromLeft ? 168 : 192, opacity: 1 }}
+                exit={{ scale: 2.5, opacity: 0 }}
+                transition={{ duration: 1.0, ease: 'easeIn' }}
+                style={{ position: 'absolute', top: 0, fontSize: 'clamp(0.8rem, 1.6vw, 1.1rem)', pointerEvents: 'none', zIndex: 30, filter: 'drop-shadow(0 0 8px #e63946)' }}
+              >
+                🚀
+              </motion.div>
+            )
+          })}
         </AnimatePresence>
-        <div style={{ fontSize: 'clamp(1.4rem, 3vw, 2rem)' }}>
-          {!isAlive ? '💥' : wasJustHit ? '💥' : nation?.emoji || '🏛️'}
+
+        {/* Impact flash */}
+        <AnimatePresence>
+          {wasJustHit && (
+            <motion.div key="flash"
+              initial={{ opacity: 0.9 }} animate={{ opacity: 0 }} transition={{ duration: 0.6 }}
+              style={{ position: 'absolute', inset: -4, background: '#e63946', borderRadius: 8, zIndex: 25, pointerEvents: 'none' }}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Shield dome */}
+        <AnimatePresence>
+          {wasJustShielded && (
+            <motion.div key="shield"
+              initial={{ scaleX: 0, scaleY: 0, opacity: 0 }}
+              animate={{ scaleX: 1, scaleY: 1, opacity: 1 }}
+              exit={{ scale: 1.4, opacity: 0 }}
+              transition={{ duration: 0.3, type: 'spring' }}
+              style={{
+                position: 'absolute', bottom: '30%', left: '50%', transform: 'translateX(-50%)',
+                width: '90%', height: '50%',
+                borderRadius: '50% 50% 0 0',
+                background: 'radial-gradient(ellipse, rgba(80,180,255,0.2), transparent)',
+                border: '2px solid rgba(80,200,255,0.7)',
+                boxShadow: '0 0 16px rgba(80,180,255,0.5)',
+                pointerEvents: 'none', zIndex: 20,
+              }}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Mid-air intercept flash */}
+        <AnimatePresence>
+          {wasJustIntercepted && (
+            <motion.div key="intercept"
+              initial={{ scale: 0.5, opacity: 1, y: -20 }}
+              animate={{ scale: 2, opacity: 0, y: -40 }}
+              transition={{ duration: 0.5 }}
+              style={{ position: 'absolute', top: 0, fontSize: 'clamp(0.7rem, 1.5vw, 1rem)', pointerEvents: 'none', zIndex: 25 }}
+            >
+              💥
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Avatar */}
+        {p && (
+          <motion.div
+            animate={wasJustHit ? { y: [0, -6, 12], opacity: [1, 1, 0.3] } : inFlight ? { x: [-1, 1, -1, 1, 0] } : {}}
+            transition={{ duration: inFlight ? 0.25 : 0.5, repeat: inFlight ? Infinity : 0 }}
+            style={{ marginBottom: -6, zIndex: 3 }}
+          >
+            <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={clamp24to36()} />
+          </motion.div>
+        )}
+
+        {/* Village table */}
+        <motion.div
+          animate={
+            wasJustHit ? { rotate: [-10, 10, -10, 0], scale: [1, 1.2, 0.7, 0.8] }
+            : inFlight ? { x: [-2, 2, -2, 2, 0] }
+            : {}
+          }
+          transition={{ duration: inFlight ? 0.25 : 0.5, repeat: inFlight ? Infinity : 0 }}
+          style={{ width: '100%' }}
+        >
+          <div style={{
+            background: 'linear-gradient(180deg, rgba(100,75,50,0.35) 0%, rgba(70,50,30,0.5) 100%)',
+            border: `1.5px solid ${wasJustHit ? '#e63946' : wasJustSaved ? '#57cc99' : inFlight ? 'rgba(230,57,70,0.5)' : 'rgba(140,100,60,0.45)'}`,
+            borderRadius: '6px 6px 0 0',
+            padding: 'clamp(4px, 0.8vw, 8px) clamp(6px, 1.2vw, 12px)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 'clamp(2px, 0.4vw, 5px)',
+          }}>
+            {wasJustHit && !isAlive ? (
+              <span style={{ fontSize: 'clamp(1.1rem, 2.5vw, 1.7rem)' }}>💥</span>
+            ) : (
+              <>
+                <span style={{ fontSize: 'clamp(1rem, 2.2vw, 1.6rem)' }}>{nation?.emoji || '🏛️'}</span>
+                {villageItems.map((item, i) => (
+                  <span key={i} style={{ fontSize: 'clamp(0.65rem, 1.3vw, 0.95rem)' }}>{item}</span>
+                ))}
+              </>
+            )}
+          </div>
+          <div style={{
+            height: 'clamp(6px, 1.2vw, 10px)',
+            background: 'rgba(70,50,30,0.85)',
+            borderRadius: '0 0 4px 4px',
+            borderTop: '1.5px solid rgba(180,130,70,0.5)',
+          }} />
+        </motion.div>
+
+        {/* Nation name */}
+        <div style={{ fontWeight: 700, fontSize: 'clamp(0.5rem, 1.1vw, 0.68rem)', textAlign: 'center', lineHeight: 1.2, color: isAlive ? 'var(--text1)' : 'var(--text3)' }}>
+          {nation?.name || p?.name || playerId}
         </div>
-        {p && <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={28} />}
-        <div style={{ fontWeight: 700, fontSize: 'clamp(0.55rem, 1.2vw, 0.72rem)', textAlign: 'center', lineHeight: 1.3, color: isAlive ? 'var(--text1)' : 'var(--text3)' }}>
-          {nation?.name || playerId}
-        </div>
-        {isAlive && (
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'clamp(0.55rem, 1.1vw, 0.68rem)', color: 'var(--text3)' }}>
+
+        {/* Stats / card indicator */}
+        {isAlive && !wasJustHit && (
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'clamp(0.45rem, 0.95vw, 0.62rem)', color: 'var(--text3)', textAlign: 'center', lineHeight: 1.4 }}>
             🚀{missiles[playerId] ?? 0} · 🛡️{defense[playerId] ?? 10}%
+            {card && ' · 🃏'}
           </div>
         )}
-        {isAlive && card && (
-          <div style={{ fontSize: '0.7rem', color: 'var(--gold)' }} title="Has a card">🃏</div>
-        )}
-        {wasJustSaved && <div style={{ fontSize: '0.9rem' }}>🛡️</div>}
-      </motion.div>
+        {wasJustShielded && <div style={{ fontSize: 'clamp(0.7rem, 1.4vw, 0.9rem)' }}>🛡️ blocked!</div>}
+        {wasJustIntercepted && <div style={{ fontSize: 'clamp(0.7rem, 1.4vw, 0.9rem)' }}>✈️ intercepted!</div>}
+      </div>
     )
   }
+
+  function clamp24to36() { return 28 }
 
   const PHASE_INSTRUCTIONS = {
     rules:      'Players are reading the rules. Host will start the game shortly.',
@@ -1996,7 +2106,8 @@ function RoundOverView({ game, players }) {
 
 // ── VOTING VIEW ───────────────────────────────────────────────────────────────
 function VotingView({ game, players }) {
-  const dealGenres = game?.dealGenres || []
+  // dealGenres in Firebase is an array of ID strings — map to full objects
+  const dealGenres = (game?.dealGenres || []).map(id => getGenreById(id)).filter(Boolean)
   const roundVotes = game?.roundVotes || {}
   const voteCounts = {}
   Object.values(roundVotes).forEach(gid => { voteCounts[gid] = (voteCounts[gid] || 0) + 1 })
@@ -2122,11 +2233,258 @@ function LobbyView({ game }) {
   )
 }
 
+// ── TV CONTROLS — visible only on the gamescreen device ───────────────────────
+// Auto-hides after 5s of inactivity; any mouse move / touch reveals it.
+// ── Buzz TV corner ────────────────────────────────────────────────────────────
+
+function TVBuzzCorner({ game, gameCode }) {
+  const store = useStore()
+  const settings = store.getSettings()
+  const aiHost = settings.aiHost ?? true
+  const [quip, setQuip] = useState(() => getBuzzQuip('idle'))
+  const [event, setEvent] = useState('idle')
+  const prevStateRef = useRef(null)
+  const prevQIndexRef = useRef(null)
+  const idleTimer = useRef(null)
+  const { speak } = useBuzzSpeech()
+
+  function setQuipAndSpeak(q, evt = 'generic') {
+    setQuip(q)
+    setEvent(evt)
+    speak(q, evt, null)
+  }
+
+  function scheduleIdle() {
+    clearTimeout(idleTimer.current)
+    idleTimer.current = setTimeout(() => {
+      const q = getBuzzQuip('idle')
+      setQuip(q)
+      setEvent('idle')
+      speak(q, 'idle', null)
+      scheduleIdle()
+    }, 14000 + Math.random() * 8000)
+  }
+
+  useEffect(() => {
+    scheduleIdle()
+    return () => clearTimeout(idleTimer.current)
+  }, [])
+
+  useEffect(() => {
+    if (!game) return
+    const state = game.state
+    const qIdx = game.currentQIndex
+    const prevState = prevStateRef.current
+    const prevQIdx = prevQIndexRef.current
+    prevStateRef.current = state
+    prevQIndexRef.current = qIdx
+
+    // First mount
+    if (prevState === null) {
+      setQuipAndSpeak(getBuzzQuip('roundStart', { gameCode, round: game.currentRound }), 'roundStart')
+      scheduleIdle()
+      return
+    }
+
+    // State transitions
+    if (state !== prevState) {
+      if (state === 'quiz') {
+        setQuipAndSpeak(getBuzzQuip('roundStart', { gameCode, round: game.currentRound }), 'roundStart')
+        scheduleIdle()
+      } else if (state === 'round-over') {
+        setQuipAndSpeak(getBuzzQuip('roundEnd', { gameCode, round: game.currentRound }), 'roundEnd')
+        scheduleIdle()
+      } else if (state === 'final') {
+        const sorted = Object.values(game.players || {})
+          .filter(p => p.role !== 'gamescreen')
+          .sort((a, b) => (b.score || 0) - (a.score || 0))
+        setQuipAndSpeak(getBuzzQuip('gameEnd', {
+          winner: sorted[0]?.name,
+          loser: sorted[sorted.length - 1]?.name,
+        }), 'gameEnd')
+        scheduleIdle()
+      } else if (state === 'round-pick') {
+        const q = getBuzzQuip('idle')
+        setQuip(q); setEvent('idle')
+        scheduleIdle()
+      }
+      return
+    }
+
+    // New question within same round
+    if (state === 'quiz' && qIdx !== prevQIdx && prevQIdx !== null) {
+      scheduleIdle()
+    }
+  }, [game?.state, game?.currentQIndex, game?.currentRound])
+
+  if (!aiHost) return null
+
+  return (
+    <div style={{
+      position: 'fixed',
+      bottom: 80,
+      left: 20,
+      zIndex: 2500,
+      maxWidth: 280,
+    }}>
+      <BuzzHost quip={quip} event={event} visible autoIdle={false} />
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function GameScreenControls() {
+  const store = useStore()
+  const { setMusicVolume } = useSound()
+  const [visible, setVisible] = useState(true)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [confirmExit, setConfirmExit] = useState(false)
+  const hideTimer = useRef(null)
+
+  const sfxVol   = store.sfxVolume   ?? 0.8
+  const musicVol = store.musicVolume ?? 0.5
+  const sfxOn    = store.sfxEnabled  !== false
+  const musicOn  = store.musicEnabled !== false
+
+  const resetHideTimer = useCallback(() => {
+    setVisible(true)
+    clearTimeout(hideTimer.current)
+    hideTimer.current = setTimeout(() => setVisible(false), 5000)
+  }, [])
+
+  useEffect(() => {
+    resetHideTimer()
+    window.addEventListener('mousemove', resetHideTimer)
+    window.addEventListener('touchstart', resetHideTimer)
+    return () => {
+      clearTimeout(hideTimer.current)
+      window.removeEventListener('mousemove', resetHideTimer)
+      window.removeEventListener('touchstart', resetHideTimer)
+    }
+  }, [resetHideTimer])
+
+  function handleSfxVolume(v) {
+    store.setSfxVolume(v)
+  }
+  function handleMusicVolume(v) {
+    store.setMusicVolume(v)
+    setMusicVolume(v)
+  }
+  function handleExit() {
+    store.setMyRole('player')
+    store.setGame(null)
+    store.setGameCode(null)
+    store.setScreen('home')
+  }
+
+  return (
+    <>
+      {/* Full SettingsOverlay (same one used by players) */}
+      <SettingsOverlay show={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
+      {/* Persistent, auto-hiding TV control bar */}
+      <motion.div
+        animate={{ opacity: visible ? 1 : 0, y: visible ? 0 : 16 }}
+        transition={{ duration: 0.35 }}
+        style={{
+          position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 3000, pointerEvents: visible ? 'auto' : 'none',
+          display: 'flex', alignItems: 'center', gap: 8,
+          background: 'rgba(10,8,24,0.82)', backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: 40, padding: '8px 14px',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
+        }}
+        onClick={resetHideTimer}
+      >
+        {/* SFX volume */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button
+            onClick={() => store.setSfxEnabled(!sfxOn)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem', opacity: sfxOn ? 1 : 0.35, padding: '2px 4px', color: 'white' }}
+            title="Toggle sound effects"
+          >
+            {sfxOn ? '🔊' : '🔇'}
+          </button>
+          <input
+            type="range" min={0} max={1} step={0.05}
+            value={sfxOn ? sfxVol : 0}
+            onChange={e => handleSfxVolume(parseFloat(e.target.value))}
+            style={{ width: 72, accentColor: 'var(--accent)', cursor: 'pointer' }}
+            title="SFX volume"
+          />
+        </div>
+
+        <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.15)' }} />
+
+        {/* Music volume */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button
+            onClick={() => { const next = !musicOn; store.setMusicEnabled(next); setMusicVolume(next ? musicVol : 0) }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem', opacity: musicOn ? 1 : 0.35, padding: '2px 4px', color: 'white' }}
+            title="Toggle music"
+          >
+            🎵
+          </button>
+          <input
+            type="range" min={0} max={1} step={0.05}
+            value={musicOn ? musicVol : 0}
+            onChange={e => handleMusicVolume(parseFloat(e.target.value))}
+            style={{ width: 72, accentColor: 'var(--accent)', cursor: 'pointer' }}
+            title="Music volume"
+          />
+        </div>
+
+        <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.15)' }} />
+
+        {/* More settings */}
+        <button
+          onClick={() => setSettingsOpen(true)}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem', padding: '2px 6px', color: 'rgba(255,255,255,0.7)', borderRadius: 6 }}
+          title="More settings"
+        >
+          ⚙️
+        </button>
+
+        <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.15)' }} />
+
+        {/* Exit */}
+        <AnimatePresence mode="wait">
+          {confirmExit ? (
+            <motion.div key="confirm" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>Exit game?</span>
+              <button
+                onClick={handleExit}
+                style={{ background: 'var(--red)', border: 'none', borderRadius: 6, color: 'white', fontSize: '0.75rem', fontWeight: 700, padding: '4px 10px', cursor: 'pointer' }}
+              >Yes, exit</button>
+              <button
+                onClick={() => setConfirmExit(false)}
+                style={{ background: 'none', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, color: 'rgba(255,255,255,0.6)', fontSize: '0.75rem', padding: '4px 10px', cursor: 'pointer' }}
+              >Cancel</button>
+            </motion.div>
+          ) : (
+            <motion.button key="exit-btn" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setConfirmExit(true)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', color: 'rgba(255,255,255,0.55)', padding: '2px 6px', whiteSpace: 'nowrap' }}
+              title="Exit game"
+            >
+              ✕ Exit
+            </motion.button>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </>
+  )
+}
+
 // ── ROOT ──────────────────────────────────────────────────────────────────────
 export default function GameScreen() {
   const store = useStore()
   const { game, gameCode } = { game: store.game, gameCode: store.gameCode }
   const { subscribeToGame } = useGame()
+  const isTV = store.myRole === 'gamescreen'
 
   useEffect(() => {
     if (!gameCode) return
@@ -2207,6 +2565,8 @@ export default function GameScreen() {
           {renderView()}
         </motion.div>
       </AnimatePresence>
+      {isTV && <TVBuzzCorner game={game} gameCode={gameCode} />}
+      {isTV && <GameScreenControls />}
     </div>
   )
 }

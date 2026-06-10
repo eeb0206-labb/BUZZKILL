@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useStore } from '../../store'
 import AvatarSvg from '../AvatarSvg'
@@ -117,6 +118,8 @@ export function Avatar({ src, name, colorHex, size = 40, avatarConfig }) {
 }
 
 // ── CameraCapture ──────────────────────────────────────────────────────────────
+// Full-screen camera overlay — renders as a portal so it covers the whole screen.
+// Pass onSkip={null} to hide the skip button.
 export function CameraCapture({ onCapture, onSkip }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -124,6 +127,7 @@ export function CameraCapture({ onCapture, onSkip }) {
   const [streaming, setStreaming] = useState(false)
   const [captured, setCaptured] = useState(null)
   const [error, setError] = useState(null)
+  const [flash, setFlash] = useState(false)
 
   useEffect(() => {
     let stream = null
@@ -142,7 +146,9 @@ export function CameraCapture({ onCapture, onSkip }) {
     c.width = v.videoWidth || 320
     c.height = v.videoHeight || 240
     c.getContext('2d').drawImage(v, 0, 0)
-    setCaptured(c.toDataURL('image/jpeg', 0.7))
+    setFlash(true)
+    setTimeout(() => setFlash(false), 300)
+    setCaptured(c.toDataURL('image/jpeg', 0.8))
   }, [])
 
   function handleFile(e) {
@@ -153,61 +159,151 @@ export function CameraCapture({ onCapture, onSkip }) {
     reader.readAsDataURL(file)
   }
 
-  // Preview + confirm (shared between camera snap and file upload)
-  if (captured) {
-    return (
-      <div className="col center" style={{ gap: 12 }}>
-        <img src={captured} alt="preview"
-          style={{ width: 160, height: 160, borderRadius: '50%', objectFit: 'cover' }} />
-        <div className="row gap-8">
-          <button className="btn btn-green" onClick={() => onCapture(captured)}>✓ Use this</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => setCaptured(null)}>Retake</button>
+  const content = (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: '#0a0a0f',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 0 env(safe-area-inset-bottom, 16px)',
+      }}
+    >
+      {/* Header */}
+      <div style={{
+        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '16px 20px', paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))',
+      }}>
+        <button
+          onClick={onSkip}
+          style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', fontSize: '0.95rem', cursor: 'pointer', padding: '8px 4px' }}
+        >
+          ✕ Cancel
+        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.1rem', color: 'var(--red)', letterSpacing: '0.05em' }}>
+            ⚡ BUZZKILL
+          </div>
+          <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.4)', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+            Camera
+          </div>
         </div>
+        <div style={{ width: 60 }} />
       </div>
-    )
-  }
 
-  // No camera — upload only
-  if (error) {
-    return (
-      <div className="col center" style={{ gap: 12 }}>
-        <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
-        <button className="btn btn-primary" onClick={() => fileRef.current?.click()}>📤 Upload from Gallery</button>
-        {onSkip && <button className="btn btn-ghost btn-sm" onClick={onSkip}>Continue without photo</button>}
-      </div>
-    )
-  }
+      {/* Viewfinder / preview area */}
+      <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
+        {/* Flash overlay */}
+        <AnimatePresence>
+          {flash && (
+            <motion.div
+              initial={{ opacity: 1 }}
+              animate={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              style={{ position: 'absolute', inset: 0, background: 'white', zIndex: 10, pointerEvents: 'none' }}
+            />
+          )}
+        </AnimatePresence>
 
-  // Camera available — show live feed + option to upload instead
-  return (
-    <div className="col" style={{ gap: 12, alignItems: 'center' }}>
-      {!captured ? (
-        <>
-          <video ref={videoRef} autoPlay playsInline muted
-            style={{ width: '100%', maxWidth: 280, borderRadius: 12, transform: 'scaleX(-1)' }} />
-          <canvas ref={canvasRef} style={{ display: 'none' }} />
-          <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
-          <div className="col center" style={{ gap: 6 }}>
-            <div className="row gap-8">
-              <button className="btn btn-primary" onClick={snap} disabled={!streaming}>📸 Take Selfie</button>
-              {onSkip && <button className="btn btn-ghost btn-sm" onClick={onSkip}>Skip</button>}
+        {captured ? (
+          /* Review captured photo */
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+            <img
+              src={captured}
+              alt="preview"
+              style={{ width: 220, height: 220, borderRadius: '50%', objectFit: 'cover', border: '4px solid var(--accent)' }}
+            />
+            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.85rem' }}>Looking good?</div>
+          </div>
+        ) : error ? (
+          /* No camera — upload prompt */
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: 32, textAlign: 'center' }}>
+            <div style={{ fontSize: '3rem' }}>📸</div>
+            <div style={{ color: 'rgba(255,255,255,0.8)', fontWeight: 700, fontSize: '1rem' }}>No camera available</div>
+            <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.8rem' }}>Upload a photo from your gallery instead</div>
+            <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
+            <button className="btn btn-primary" onClick={() => fileRef.current?.click()} style={{ marginTop: 8 }}>
+              📤 Choose from Gallery
+            </button>
+          </div>
+        ) : (
+          /* Live camera feed */
+          <div style={{ position: 'relative', width: '100%', maxWidth: 420 }}>
+            <video
+              ref={videoRef}
+              autoPlay playsInline muted
+              style={{ width: '100%', display: 'block', transform: 'scaleX(-1)' }}
+            />
+            {/* Viewfinder circle overlay */}
+            <div style={{
+              position: 'absolute', inset: 0, pointerEvents: 'none',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <div style={{
+                width: '70%', paddingBottom: '70%', borderRadius: '50%',
+                border: '2px solid rgba(255,255,255,0.35)',
+                boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)',
+                position: 'relative',
+              }} />
             </div>
-            <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.78rem' }}
-              onClick={() => fileRef.current?.click()}>📤 Upload from gallery instead</button>
           </div>
-        </>
-      ) : (
-        <>
-          <img src={captured} alt="preview"
-            style={{ width: 160, height: 160, borderRadius: '50%', objectFit: 'cover' }} />
-          <div className="row gap-8">
-            <button className="btn btn-green" onClick={() => onCapture(captured)}>✓ Use this</button>
-            <button className="btn btn-ghost btn-sm" onClick={() => setCaptured(null)}>Retake</button>
+        )}
+        <canvas ref={canvasRef} style={{ display: 'none' }} />
+      </div>
+
+      {/* Bottom controls */}
+      <div style={{ width: '100%', padding: '24px 32px 32px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+        {captured ? (
+          /* Confirm / retake */
+          <div style={{ display: 'flex', gap: 16, width: '100%', maxWidth: 320 }}>
+            <button
+              className="btn btn-ghost"
+              style={{ flex: 1 }}
+              onClick={() => setCaptured(null)}
+            >↩ Retake</button>
+            <button
+              className="btn btn-green"
+              style={{ flex: 1, fontWeight: 700 }}
+              onClick={() => onCapture(captured)}
+            >✓ Use Photo</button>
           </div>
-        </>
-      )}
-    </div>
+        ) : !error ? (
+          /* Shutter button + gallery */
+          <>
+            <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
+            {/* Big shutter button */}
+            <motion.button
+              whileTap={{ scale: 0.9 }}
+              disabled={!streaming}
+              onClick={snap}
+              style={{
+                width: 80, height: 80, borderRadius: '50%',
+                background: streaming ? 'white' : 'rgba(255,255,255,0.2)',
+                border: '5px solid rgba(255,255,255,0.4)',
+                cursor: streaming ? 'pointer' : 'default',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: streaming ? '0 0 0 3px rgba(255,255,255,0.15), 0 4px 24px rgba(0,0,0,0.6)' : 'none',
+                transition: 'background 0.2s',
+              }}
+            >
+              <div style={{ width: 62, height: 62, borderRadius: '50%', background: streaming ? 'white' : 'rgba(255,255,255,0.2)' }} />
+            </motion.button>
+            <button
+              className="btn btn-ghost btn-sm"
+              style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.78rem' }}
+              onClick={() => fileRef.current?.click()}
+            >
+              📤 Upload from gallery instead
+            </button>
+          </>
+        ) : null}
+      </div>
+    </motion.div>
   )
+
+  return createPortal(content, document.body)
 }
 
 // ── TimerRing ──────────────────────────────────────────────────────────────────

@@ -1,9 +1,12 @@
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useStore } from '../store'
 import { useGame } from '../hooks/useGame'
 import { Avatar, TimerRing, Toast, MuteButton } from '../components/ui'
 import { getGenreById, GAME_TYPES } from '../data/genres'
+import BuzzHost from '../components/BuzzHost'
+import { getBuzzQuip } from '../data/hostQuips'
+import { useShouldBuzzSpeak } from '../hooks/useBuzzSpeech'
 
 export default function RoundPickScreen() {
   const store = useStore()
@@ -11,23 +14,38 @@ export default function RoundPickScreen() {
   const isController = store.isController()
   const isGameScreen = store.isGameScreen()
   const setScreen = store.setScreen
-  const { subscribeToGame, dealGenres, voteForGenre, selectGenre } = useGame()
+  const { subscribeToGame, dealGenres, voteForGenre, selectGenre, updateGame } = useGame()
 
   const [genres, setGenres] = useState([])
   const [myVote, setMyVote] = useState(null)
   const [timeLeft, setTimeLeft] = useState(0)
   const [winner, setWinner] = useState(null)
   const [dealing, setDealing] = useState(false)
-  const [allVotedCountdown, setAllVotedCountdown] = useState(null) // 5..0
+  // displayCountdown: derived by ALL clients from game.allVotedAt (Firebase timestamp)
+  const [displayCountdown, setDisplayCountdown] = useState(null)
 
   // Refs — don't cause re-renders, survive effect cleanups
-  const allVotedTimerRef = useRef(null)
-  const lockingRef = useRef(false)       // only set inside lockInGenre — nowhere else
+  const allVotedTimerRef = useRef(null)   // setTimeout for controller to fire lockInGenre
+  const displayTimerRef = useRef(null)    // setInterval for countdown display on all clients
+  const lockingRef = useRef(false)        // only set inside lockInGenre — nowhere else
   const mainTimerRef = useRef(null)
 
   const settings = store.getSettings()
   const totalTime = settings.timers?.genreVote || 200
+  const aiHost = settings.aiHost ?? true
   const allPlayers = Object.values(game?.players || {})
+
+  const shouldSpeak = useShouldBuzzSpeak(game)
+
+  const buzzGenreQuip = useMemo(() => {
+    if (!aiHost || !winner) return null
+    return getBuzzQuip('genreReveal', {
+      gameCode,
+      genreId: winner.id,
+      genreName: winner.name,
+      round: game?.currentRound,
+    })
+  }, [aiHost, winner?.id, gameCode])
   const voters = allPlayers.filter(p => p.role !== 'gamescreen')
   const voterCount = voters.length || 1
   const votes = game?.roundVotes || {}
@@ -51,6 +69,18 @@ export default function RoundPickScreen() {
   // ── Deal genres on mount (controller only) ───────────────────────────────────
   useEffect(() => {
     if (!isController || !game) return
+    // Playlist mode: pick the pre-configured genre for this round
+    const playlist = game.settings?.playlist || []
+    if (playlist.length > 0 && !game.dealGenres) {
+      const roundIdx = (game.currentRound || 1) - 1
+      const playlistGenre = getGenreById(playlist[roundIdx] || playlist[0])
+      if (playlistGenre) {
+        // Brief delay so all players see the "Up next" screen before locking in
+        setDealing(true)
+        setTimeout(() => lockInGenre(playlistGenre), 2800)
+        return
+      }
+    }
     // Dev mode: if a specific genre was pre-selected, lock it in immediately
     if (game.devTestGenre && !game.dealGenres) {
       const preGenre = getGenreById(game.devTestGenre)
@@ -62,7 +92,7 @@ export default function RoundPickScreen() {
     if (game.dealGenres) return
     setDealing(true)
     dealGenres(gameCode, game).then(() => setDealing(false))
-  }, [isController, game?.dealGenres, game?.devTestGenre])
+  }, [isController, game?.dealGenres, game?.devTestGenre, game?.settings?.playlist, game?.currentRound])
 
   // ── Load genres from existing game state ─────────────────────────────────────
   useEffect(() => {
@@ -96,45 +126,56 @@ export default function RoundPickScreen() {
     return () => { clearInterval(mainTimerRef.current); mainTimerRef.current = null }
   }, [genres.length, totalTime, isController, game?.dealGenresAt])
 
-  // ── All-voted auto-countdown (controller only) ────────────────────────────────
-  // IMPORTANT: this effect has NO cleanup return — we don't want React to kill
-  // the interval mid-countdown when votes come in and re-trigger the effect.
-  // Unmount cleanup is handled by the separate effect below.
+  // ── All-voted: controller writes allVotedAt timestamp to Firebase ────────────
+  // Other clients derive their own countdown display from that timestamp.
+  // Using setTimeout (not interval) — fires once to call lockInGenre.
   useEffect(() => {
     if (!isController || winner || !genres.length) return
     const votesCast = Object.keys(votes).length
 
     if (votesCast >= voterCount && voterCount > 0) {
-      // All voted — start 5s countdown if not already running
-      if (allVotedTimerRef.current || lockingRef.current) return
-      let t = 5
-      setAllVotedCountdown(t)
-      allVotedTimerRef.current = setInterval(() => {
-        t -= 1
-        setAllVotedCountdown(t)
-        if (t <= 0) {
-          clearInterval(allVotedTimerRef.current)
-          allVotedTimerRef.current = null
-          setAllVotedCountdown(null)
-          // lockInGenre owns the lockingRef guard — do not pre-set it here
-          lockInGenre(pickWinner())
-        }
-      }, 1000)
-    } else {
-      // Votes dropped below threshold — cancel running countdown
-      if (allVotedTimerRef.current) {
-        clearInterval(allVotedTimerRef.current)
+      // Already counting down or locking — don't double-start
+      if (allVotedTimerRef.current || lockingRef.current || game?.allVotedAt) return
+      // Write timestamp to Firebase so ALL clients can see and compute the countdown
+      updateGame(gameCode, { allVotedAt: Date.now() })
+      allVotedTimerRef.current = setTimeout(() => {
         allVotedTimerRef.current = null
-        setAllVotedCountdown(null)
+        lockInGenre(pickWinner())
+      }, 5000)
+    } else {
+      // Votes dropped below threshold — cancel
+      if (allVotedTimerRef.current) {
+        clearTimeout(allVotedTimerRef.current)
+        allVotedTimerRef.current = null
+      }
+      if (game?.allVotedAt) {
+        updateGame(gameCode, { allVotedAt: null })
       }
     }
-    // ← intentionally no cleanup return here
+    // ← intentionally no cleanup return here (avoids cancelling mid-countdown on re-render)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [Object.keys(votes).length, voterCount, isController, winner, genres.length])
+  }, [Object.keys(votes).length, voterCount, isController, winner, genres.length, game?.allVotedAt])
 
-  // ── Unmount cleanup for all-voted timer ──────────────────────────────────────
+  // ── All clients: derive displayCountdown from game.allVotedAt ────────────────
+  useEffect(() => {
+    clearInterval(displayTimerRef.current)
+    if (!game?.allVotedAt) {
+      setDisplayCountdown(null)
+      return
+    }
+    const tick = () => {
+      const remaining = Math.max(0, 5 - Math.floor((Date.now() - game.allVotedAt) / 1000))
+      setDisplayCountdown(remaining)
+    }
+    tick()
+    displayTimerRef.current = setInterval(tick, 250)
+    return () => clearInterval(displayTimerRef.current)
+  }, [game?.allVotedAt])
+
+  // ── Unmount cleanup ───────────────────────────────────────────────────────────
   useEffect(() => () => {
-    if (allVotedTimerRef.current) clearInterval(allVotedTimerRef.current)
+    clearTimeout(allVotedTimerRef.current)
+    clearInterval(displayTimerRef.current)
   }, [])
 
   // ── Vote helpers ─────────────────────────────────────────────────────────────
@@ -164,10 +205,11 @@ export default function RoundPickScreen() {
 
     // Cancel any running countdowns
     if (allVotedTimerRef.current) {
-      clearInterval(allVotedTimerRef.current)
+      clearTimeout(allVotedTimerRef.current)
       allVotedTimerRef.current = null
     }
-    setAllVotedCountdown(null)
+    // Clear the Firebase timestamp so other clients stop showing the banner
+    if (game?.allVotedAt) updateGame(gameCode, { allVotedAt: null })
     setWinner(genre)
 
     await new Promise(r => setTimeout(r, 1200))
@@ -203,9 +245,9 @@ export default function RoundPickScreen() {
           )}
         </motion.div>
 
-        {/* All-voted countdown banner */}
+        {/* All-voted banner — visible on ALL screens, countdown synced via Firebase allVotedAt */}
         <AnimatePresence>
-          {allVotedCountdown !== null && allVotedCountdown > 0 && !winner && (
+          {!winner && game?.allVotedAt && (
             <motion.div
               className="card center"
               style={{ background: 'rgba(192,132,252,0.1)', borderColor: 'var(--accent)', gap: 4 }}
@@ -214,15 +256,52 @@ export default function RoundPickScreen() {
               exit={{ opacity: 0 }}
             >
               <div style={{ fontSize: '0.8rem', color: 'var(--text2)' }}>All votes in! Starting in…</div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '2rem', color: 'var(--accent)', fontWeight: 700 }}>
-                {allVotedCountdown}
-              </div>
+              {displayCountdown !== null ? (
+                <motion.div
+                  key={displayCountdown}
+                  initial={{ scale: 1.3, opacity: 0.6 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  style={{ fontFamily: 'var(--font-mono)', fontSize: '2rem', color: 'var(--accent)', fontWeight: 700 }}
+                >
+                  {displayCountdown}
+                </motion.div>
+              ) : (
+                <motion.div
+                  animate={{ opacity: [1, 0.4, 1] }}
+                  transition={{ repeat: Infinity, duration: 1.2 }}
+                  style={{ fontFamily: 'var(--font-mono)', fontSize: '2rem', color: 'var(--accent)', fontWeight: 700 }}
+                >
+                  ●●●
+                </motion.div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Loading state */}
-        {(dealing || !genres.length) && (
+        {/* Playlist "Up next" state */}
+        {dealing && (settings.playlist || []).length > 0 && (() => {
+          const roundIdx = (game?.currentRound || 1) - 1
+          const nextGenre = getGenreById((settings.playlist || [])[roundIdx] || (settings.playlist || [])[0])
+          if (!nextGenre) return null
+          return (
+            <motion.div className="col center" style={{ padding: 40, gap: 16 }} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                Round {game?.currentRound || 1} of {(settings.playlist || []).length}
+              </div>
+              <div style={{ fontSize: '4rem' }}>{nextGenre.emoji}</div>
+              <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.6rem', textAlign: 'center' }}>{nextGenre.name}</div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--text2)' }}>Get ready…</div>
+              <motion.div
+                animate={{ opacity: [1, 0.4, 1] }}
+                transition={{ repeat: Infinity, duration: 1.2 }}
+                style={{ fontFamily: 'var(--font-mono)', fontSize: '1.2rem', color: nextGenre.color || 'var(--accent)', fontWeight: 700 }}
+              >●●●</motion.div>
+            </motion.div>
+          )
+        })()}
+
+        {/* Standard loading state (random mode) */}
+        {dealing && !(settings.playlist || []).length && (
           <div className="col center" style={{ padding: 40 }}>
             <div className="loading-dots"><span /><span /><span /></div>
             <p className="muted" style={{ marginTop: 12 }}>Shuffling genres...</p>
@@ -308,16 +387,33 @@ export default function RoundPickScreen() {
         <AnimatePresence>
           {winner && (
             <motion.div
-              className="card col center gap-8"
-              style={{ background: `${winner.color}11`, borderColor: winner.color, marginTop: 8 }}
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+              className="col gap-10"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
             >
-              <div style={{ fontSize: '3rem' }}>{winner.emoji}</div>
-              <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.3rem' }}>{winner.name} wins!</div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text2)' }}>Starting round...</div>
-              <div className="loading-dots"><span /><span /><span /></div>
+              {/* Buzz genre intro quip */}
+              {aiHost && buzzGenreQuip && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                >
+                  <BuzzHost quip={buzzGenreQuip} featured visible event="genreReveal" genreId={winner?.id} speakOnChange={shouldSpeak} />
+                </motion.div>
+              )}
+
+              <motion.div
+                className="card col center gap-8"
+                style={{ background: `${winner.color}11`, borderColor: winner.color }}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 20, delay: aiHost ? 0.3 : 0 }}
+              >
+                <div style={{ fontSize: '3rem' }}>{winner.emoji}</div>
+                <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.3rem' }}>{winner.name} wins!</div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text2)' }}>Starting round...</div>
+                <div className="loading-dots"><span /><span /><span /></div>
+              </motion.div>
             </motion.div>
           )}
         </AnimatePresence>

@@ -1,9 +1,12 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useStore } from '../store'
 import { useGame } from '../hooks/useGame'
 import { Avatar, Podium, Confetti, Toast, MuteButton } from '../components/ui'
 import { useSound } from '../hooks/useSound'
+import { BuzzBanner } from '../components/BuzzHost'
+import { getBuzzQuip } from '../data/hostQuips'
+import { useShouldBuzzSpeak } from '../hooks/useBuzzSpeech'
 
 export default function RoundOverScreen() {
   const store = useStore()
@@ -38,6 +41,23 @@ export default function RoundOverScreen() {
   const currentRound = game?.currentRound || 1
   const totalRounds = settings.totalRounds || 5
   const isLastRound = currentRound >= totalRounds
+  const aiHost = settings.aiHost ?? true
+  const shouldSpeak = useShouldBuzzSpeak(game)
+
+  const buzzQuip = useMemo(() => {
+    if (!aiHost) return null
+    const sorted = [...players].sort((a, b) => (b.score || 0) - (a.score || 0))
+    const bottom = sorted[sorted.length - 1]
+    // Occasionally call out winner/loser, otherwise standard round-end quip
+    const roll = Math.random()
+    if (roll < 0.3 && sorted[0]) {
+      return getBuzzQuip('playerWinning', { name: sorted[0].name })
+    }
+    if (roll < 0.5 && bottom && sorted.length > 1) {
+      return getBuzzQuip('playerLosing', { name: bottom.name })
+    }
+    return getBuzzQuip('roundEnd', { gameCode, round: currentRound })
+  }, [aiHost, currentRound, gameCode])
 
   // Round scores this round
   const roundScores = [...players].sort((a, b) => (b.roundScore || 0) - (a.roundScore || 0))
@@ -72,6 +92,17 @@ export default function RoundOverScreen() {
       </div>
 
       <div className="screen-inner">
+        {/* Buzz commentary */}
+        {aiHost && buzzQuip && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          >
+            <BuzzBanner quip={buzzQuip} visible speakOnChange={shouldSpeak} />
+          </motion.div>
+        )}
+
         {/* Overall podium */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}

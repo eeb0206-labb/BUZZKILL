@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useStore } from '../store'
 import { useGame } from '../hooks/useGame'
 import { Avatar, QRCode, Modal, Toast, MuteButton, CameraCapture } from '../components/ui'
-import { INSIDE_JOKE_CATEGORIES, ALL_GENRES } from '../data/genres'
+import { INSIDE_JOKE_CATEGORIES, ALL_GENRES, GAME_TYPES, getGenreById } from '../data/genres'
 import { db, ref, update } from '../firebase'
 import AvatarCreator from '../components/AvatarCreator'
 import AvatarSvg from '../components/AvatarSvg'
@@ -344,21 +344,28 @@ function PlayerCard({ player, isMe, hostId, onRoleChange, onTransferHost }) {
 }
 
 // ── rules sheet ──────────────────────────────────────────────────────────────────
-function RulesSheet({ isQM }) {
+function RulesSheet({ isQM, aiHost, hasScreen }) {
+  const modeLabel = aiHost ? '⚡ Buzz (AI Host)' : '🎤 Question Master'
+  const screenLabel = hasScreen ? '📺 Big Screen' : '📱 Phones Only'
   return (
     <div className="col gap-14">
       {/* Game mode */}
-      <div className="card" style={{ background: isQM ? 'rgba(192,132,252,0.06)' : 'rgba(87,204,153,0.06)', borderColor: isQM ? 'rgba(192,132,252,0.2)' : 'rgba(87,204,153,0.2)' }}>
-        <div style={{ fontWeight: 700, marginBottom: 6, fontSize: '0.95rem' }}>
-          {isQM ? '🎙️ Question Master Mode' : '🤖 No-Host Mode (this game)'}
+      <div className="card" style={{
+        background: aiHost ? 'rgba(247,224,39,0.05)' : 'rgba(192,132,252,0.06)',
+        borderColor: aiHost ? 'rgba(247,224,39,0.25)' : 'rgba(192,132,252,0.2)',
+      }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+          <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>
+            {modeLabel} · {screenLabel}
+          </div>
         </div>
-        {isQM ? (
+        {aiHost ? (
           <div style={{ fontSize: '0.83rem', color: 'var(--text2)', lineHeight: 1.6 }}>
-            One person runs the game from their phone. They read each question aloud, hear spoken answers, and decide what's right or wrong. In subjective rounds like Hot Takes they rank answers and pick winners. Great for a pub quiz feel.
+            Buzz runs the show. Questions appear automatically, players buzz in on their phones, and answers are judged without a host. Buzz provides commentary between rounds.
           </div>
         ) : (
           <div style={{ fontSize: '0.83rem', color: 'var(--text2)', lineHeight: 1.6 }}>
-            The game runs itself — questions appear on screen, players buzz in on their phones, and answers are judged automatically. No one has to be in charge. Great for a fast, casual vibe.
+            One person is the Question Master — they read questions aloud, judge answers, and run the room. Perfect for a pub quiz vibe.
           </div>
         )}
       </div>
@@ -400,6 +407,99 @@ function RulesSheet({ isQM }) {
 }
 
 // ── settings form ────────────────────────────────────────────────────────────────
+function PlaylistEditor({ playlist, onChange }) {
+  const PLAYABLE = ALL_GENRES.filter(g => g.id !== 'insidejokes' && g.id !== 'custom')
+  const byType = Object.entries(GAME_TYPES).filter(([, t]) => t).map(([typeId, type]) => ({
+    typeId, type, genres: PLAYABLE.filter(g => g.gameType === typeId),
+  })).filter(g => g.genres.length > 0)
+
+  function toggle(genreId) {
+    if (playlist.includes(genreId)) {
+      onChange(playlist.filter(id => id !== genreId))
+    } else {
+      onChange([...playlist, genreId])
+    }
+  }
+  function move(idx, dir) {
+    const next = [...playlist]
+    const swap = idx + dir
+    if (swap < 0 || swap >= next.length) return
+    ;[next[idx], next[swap]] = [next[swap], next[idx]]
+    onChange(next)
+  }
+  function remove(idx) {
+    onChange(playlist.filter((_, i) => i !== idx))
+  }
+
+  return (
+    <div className="col gap-8">
+      {/* Current playlist */}
+      {playlist.length > 0 && (
+        <div className="card">
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>
+            📋 Your Playlist — {playlist.length} round{playlist.length !== 1 ? 's' : ''}
+          </div>
+          <div className="col gap-6">
+            {playlist.map((id, idx) => {
+              const g = getGenreById(id)
+              if (!g) return null
+              return (
+                <div key={`${id}-${idx}`} className="row gap-8" style={{ alignItems: 'center', padding: '4px 0', borderBottom: idx < playlist.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text3)', minWidth: 20 }}>
+                    {idx + 1}
+                  </span>
+                  <span style={{ fontSize: '1.2rem' }}>{g.emoji}</span>
+                  <span className="flex-1" style={{ fontSize: '0.88rem', fontWeight: 600 }}>{g.name}</span>
+                  <div className="row gap-4">
+                    <button onClick={() => move(idx, -1)} disabled={idx === 0}
+                      style={{ background: 'none', border: 'none', color: idx === 0 ? 'var(--text3)' : 'var(--text2)', cursor: idx === 0 ? 'default' : 'pointer', fontSize: '0.9rem', padding: '4px' }}>▲</button>
+                    <button onClick={() => move(idx, 1)} disabled={idx === playlist.length - 1}
+                      style={{ background: 'none', border: 'none', color: idx === playlist.length - 1 ? 'var(--text3)' : 'var(--text2)', cursor: idx === playlist.length - 1 ? 'default' : 'pointer', fontSize: '0.9rem', padding: '4px' }}>▼</button>
+                    <button onClick={() => remove(idx)}
+                      style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: '0.9rem', padding: '4px' }}>✕</button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Genre picker */}
+      {byType.map(({ typeId, type, genres }) => (
+        <div key={typeId} className="card">
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>{type.icon} {type.label}</div>
+          <div className="col gap-0">
+            {genres.map(g => {
+              const inPlaylist = playlist.includes(g.id)
+              return (
+                <div key={g.id} className="row gap-8"
+                  style={{ padding: '8px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer', opacity: 1 }}
+                  onClick={() => toggle(g.id)}>
+                  <span style={{ fontSize: '1.2rem' }}>{g.emoji}</span>
+                  <div className="flex-1">
+                    <div style={{ fontSize: '0.88rem', fontWeight: 600 }}>{g.name}</div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text3)' }}>{g.desc || type.desc}</div>
+                  </div>
+                  <div style={{
+                    width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                    border: `2px solid ${inPlaylist ? 'var(--accent)' : 'var(--border)'}`,
+                    background: inPlaylist ? 'var(--accent)' : 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: 'white', fontSize: '0.75rem', fontWeight: 700,
+                  }}>
+                    {inPlaylist ? '✓' : ''}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function SettingsForm({ localSettings, setS, setTimer, setPowerup, toggleGenreExclude, settingsTab, setSettingsTab, showQMInfo, setShowQMInfo }) {
   const SETTINGS_TABS = [
     { id: 'game', label: '🎮 Game' },
@@ -487,6 +587,53 @@ function SettingsForm({ localSettings, setS, setTimer, setPowerup, toggleGenreEx
               <Toggle checked={!!localSettings.threeRandomGenres} onChange={v => setS('threeRandomGenres', v)} />
             </div>
           </div>
+
+          {/* Buzz Voice (ElevenLabs) */}
+          <div className="card col gap-12" style={{ borderColor: 'rgba(247,224,39,0.25)', background: 'rgba(247,224,39,0.03)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ fontWeight: 700, fontFamily: 'var(--font-head)' }}>⚡ Buzz Voice</div>
+              <div style={{ fontSize: '0.7rem', color: 'rgba(247,224,39,0.6)', fontFamily: 'var(--font-mono)', background: 'rgba(247,224,39,0.08)', border: '1px solid rgba(247,224,39,0.2)', borderRadius: 4, padding: '1px 6px' }}>
+                ElevenLabs
+              </div>
+            </div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text2)', lineHeight: 1.5 }}>
+              Give Buzz a real voice. Create a voice in ElevenLabs, paste the API key and Voice ID here — Buzz will speak on the TV screen (or host's phone in phones-only mode).
+            </div>
+            <div>
+              <label className="input-label">ElevenLabs API Key</label>
+              <input
+                type="password"
+                className="input"
+                placeholder="sk-..."
+                value={localSettings.elevenLabsApiKey || ''}
+                onChange={e => setS('elevenLabsApiKey', e.target.value)}
+                autoComplete="off"
+                style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}
+              />
+            </div>
+            <div>
+              <label className="input-label">Voice ID</label>
+              <input
+                type="text"
+                className="input"
+                placeholder="e.g. 21m00Tcm4TlvDq8ikWAM"
+                value={localSettings.buzzVoiceId || ''}
+                onChange={e => setS('buzzVoiceId', e.target.value)}
+                autoComplete="off"
+                style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}
+              />
+            </div>
+            {localSettings.elevenLabsApiKey && localSettings.buzzVoiceId && (
+              <div style={{ fontSize: '0.75rem', color: 'rgba(87,204,153,0.9)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                ✓ Voice configured — Buzz will speak during the game
+              </div>
+            )}
+            {(!localSettings.elevenLabsApiKey || !localSettings.buzzVoiceId) && (
+              <div style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>
+                Leave blank to use captions only
+              </div>
+            )}
+          </div>
         </motion.div>
       )}
 
@@ -524,24 +671,61 @@ function SettingsForm({ localSettings, setS, setTimer, setPowerup, toggleGenreEx
 
       {settingsTab === 'genres' && (
         <motion.div className="col gap-8" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          {['classic', 'themed', 'creative'].map(cat => (
-            <div key={cat} className="card">
-              <div style={{ fontWeight: 700, marginBottom: 10 }}>
-                {cat === 'classic' ? '📚 Classic' : cat === 'themed' ? '🎭 Themed' : '🎨 Creative'}
-              </div>
-              {ALL_GENRES.filter(g => g.category === cat && g.id !== 'insidejokes' && g.id !== 'custom').map(g => (
-                <div key={g.id} className="row gap-8"
-                  style={{ padding: '6px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                  onClick={() => toggleGenreExclude(g.id)}>
-                  <span>{g.emoji}</span>
-                  <span className="flex-1" style={{ fontSize: '0.9rem' }}>{g.name}</span>
-                  <input type="checkbox" readOnly
-                    checked={!(localSettings.excludedGenres || []).includes(g.id)}
-                    style={{ width: 18, height: 18, accentColor: 'var(--accent)', cursor: 'pointer' }} />
-                </div>
+          {/* Mode toggle */}
+          <div className="card" style={{ gap: 0 }}>
+            <div style={{ fontWeight: 700, marginBottom: 10 }}>Game Mode</div>
+            <div className="row gap-8">
+              {[
+                { id: false, label: '🎲 Random Rotation', desc: 'Vote on 3 random games each round' },
+                { id: true, label: '📋 Curated Playlist', desc: 'Play specific games in a set order' },
+              ].map(opt => (
+                <button
+                  key={String(opt.id)}
+                  onClick={() => {
+                    setS('playlistMode', opt.id)
+                    if (!opt.id) setS('playlist', [])
+                  }}
+                  style={{
+                    flex: 1, padding: '10px 8px', borderRadius: 10, cursor: 'pointer',
+                    border: `2px solid ${!!localSettings.playlistMode === opt.id ? 'var(--accent)' : 'var(--border)'}`,
+                    background: !!localSettings.playlistMode === opt.id ? 'rgba(192,132,252,0.1)' : 'var(--surface)',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{opt.label}</div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text3)', marginTop: 3 }}>{opt.desc}</div>
+                </button>
               ))}
             </div>
-          ))}
+          </div>
+
+          {/* Playlist mode */}
+          {localSettings.playlistMode ? (
+            <PlaylistEditor
+              playlist={localSettings.playlist || []}
+              onChange={pl => { setS('playlist', pl); setS('totalRounds', pl.length || 1) }}
+            />
+          ) : (
+            /* Random mode — genre exclusions */
+            ['classic', 'themed', 'creative'].map(cat => (
+              <div key={cat} className="card">
+                <div style={{ fontWeight: 700, marginBottom: 10 }}>
+                  {cat === 'classic' ? '📚 Classic' : cat === 'themed' ? '🎭 Themed' : '🎨 Creative'}
+                </div>
+                {ALL_GENRES.filter(g => g.category === cat && g.id !== 'insidejokes' && g.id !== 'custom').map(g => (
+                  <div key={g.id} className="row gap-8"
+                    style={{ padding: '6px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                    onClick={() => toggleGenreExclude(g.id)}>
+                    <span>{g.emoji}</span>
+                    <span className="flex-1" style={{ fontSize: '0.9rem' }}>{g.name}</span>
+                    <input type="checkbox" readOnly
+                      checked={!(localSettings.excludedGenres || []).includes(g.id)}
+                      style={{ width: 18, height: 18, accentColor: 'var(--accent)', cursor: 'pointer' }} />
+                  </div>
+                ))}
+              </div>
+            ))
+          )}
         </motion.div>
       )}
     </div>
@@ -598,6 +782,8 @@ export default function LobbyScreen() {
   const players = Object.values(game?.players || {})
   const insideJokes = game?.insideJokes ? Object.values(game.insideJokes) : []
   const isQM = game?.settings?.questionMaster ?? false
+  const aiHost = game?.settings?.aiHost ?? true
+  const hasScreen = game?.settings?.hasScreen ?? false
 
   function copyCode() {
     navigator.clipboard?.writeText(joinUrl).catch(() => {})
@@ -960,7 +1146,7 @@ export default function LobbyScreen() {
         {/* Rules tab */}
         {playerTab === 'rules' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <RulesSheet isQM={isQM} />
+            <RulesSheet isQM={isQM} aiHost={aiHost} hasScreen={hasScreen} />
           </motion.div>
         )}
 

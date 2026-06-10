@@ -9,7 +9,13 @@ const DEFAULT_SETTINGS = {
   maxPlayers: 10,
   excludedGenres: [],
   customGenres: [],
+  playlist: [],
+  playlistMode: false,
+  aiHost: true,
+  hasScreen: false,
   anthropicApiKey: '',
+  elevenLabsApiKey: '',
+  buzzVoiceId: '',
   timers: {
     quizQuestion: 60,
     quizAnswer: 25,
