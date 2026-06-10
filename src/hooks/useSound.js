@@ -1,5 +1,6 @@
 import { useRef, useCallback, useEffect } from 'react'
 import { useStore } from '../store'
+import { isBuzzAudioPlaying } from './useBuzzSpeech'
 
 let audioCtx = null
 function getCtx() {
@@ -204,12 +205,12 @@ export function useSound() {
   const baseMusicVol = () => (muted || !musicOn) ? 0 : musicVol * 0.08
 
   const playCorrect = useCallback(() => {
-    if (muted || !sfxOn) return
+    if (muted || !sfxOn || isBuzzAudioPlaying()) return
     ;[0, 0.1, 0.2].forEach((d, i) => playTone([523, 659, 784][i], 'triangle', 0.15, 0.3 * sfxVol, d))
   }, [muted, sfxOn, sfxVol])
 
   const playWrong = useCallback(() => {
-    if (muted || !sfxOn) return
+    if (muted || !sfxOn || isBuzzAudioPlaying()) return
     ;[0, 0.12, 0.24].forEach((d, i) => playTone([220, 196, 174][i], 'sawtooth', 0.1, 0.3 * sfxVol, d))
   }, [muted, sfxOn, sfxVol])
 

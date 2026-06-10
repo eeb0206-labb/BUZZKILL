@@ -14,8 +14,8 @@ const DEFAULT_SETTINGS = {
   aiHost: true,
   hasScreen: false,
   anthropicApiKey: '',
-  elevenLabsApiKey: '',
-  buzzVoiceId: '',
+  elevenLabsApiKey: import.meta.env.VITE_ELEVENLABS_API_KEY || '',
+  buzzVoiceId: import.meta.env.VITE_BUZZ_VOICE_ID || '',
   timers: {
     quizQuestion: 60,
     quizAnswer: 25,

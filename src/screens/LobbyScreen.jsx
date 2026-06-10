@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useStore } from '../store'
 import { useGame } from '../hooks/useGame'
@@ -8,6 +8,9 @@ import { db, ref, update } from '../firebase'
 import AvatarCreator from '../components/AvatarCreator'
 import AvatarSvg from '../components/AvatarSvg'
 import { DEFAULT_AVATAR_CONFIG } from '../data/avatarParts'
+import { useBuzzSpeech, useShouldBuzzSpeak, useBuzzSpeaking } from '../hooks/useBuzzSpeech'
+import { getBuzzQuip } from '../data/hostQuips'
+import BuzzHost from '../components/BuzzHost'
 
 // ── settings helpers ────────────────────────────────────────────────────────────
 const TIMER_OPTIONS = [
@@ -294,8 +297,11 @@ function ProfileModalContent({ profileMode, setProfileMode, profileName, setProf
 }
 
 // ── player card (host view) ──────────────────────────────────────────────────────
-function PlayerCard({ player, isMe, hostId, onRoleChange, onTransferHost }) {
+function PlayerCard({ player, isMe, hostId, tvId, onRoleChange, onTransferHost }) {
   const isCurrentHost = player.id === hostId
+  const isTV = player.id === tvId
+  // Derive effective display role: TV assignment takes priority, host is treated as 'player' otherwise
+  const effectiveRole = isTV ? 'gamescreen' : (isCurrentHost ? 'player' : player.role)
   return (
     <motion.div className="card col center gap-8" initial={{ opacity: 0, scale: 0.88 }}
       animate={{ opacity: 1, scale: 1 }} layout
@@ -310,14 +316,15 @@ function PlayerCard({ player, isMe, hostId, onRoleChange, onTransferHost }) {
         {player.name}
         {isMe && <span style={{ color: 'var(--text3)', fontWeight: 400, fontSize: '0.8rem' }}> (you)</span>}
       </div>
-      {/* Role buttons — shown for everyone, including host (so host can become TV Screen) */}
+      {/* Role buttons — host changes any player's role including TV screen assignment */}
       <div style={{ display: 'flex', gap: 3, justifyContent: 'center', flexWrap: 'wrap' }}>
         {ROLE_OPTIONS.map(({ role, icon, title }) => {
-          const active = player.role === role || (isCurrentHost && role === 'player')
+          const active = effectiveRole === role
           return (
-            <motion.button key={role} title={title} onClick={() => onRoleChange(player.id, role)}
+            <motion.button key={role} title={title}
+              onClick={() => { if (!active) onRoleChange(player.id, role) }}
               whileTap={{ scale: 0.9 }}
-              style={{ padding: '3px 7px', borderRadius: 7, whiteSpace: 'nowrap', cursor: 'pointer',
+              style={{ padding: '3px 7px', borderRadius: 7, whiteSpace: 'nowrap', cursor: active ? 'default' : 'pointer',
                 border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border2)'}`,
                 background: active ? 'rgba(192,132,252,0.2)' : 'transparent',
                 color: active ? 'var(--accent)' : 'var(--text3)',
@@ -408,7 +415,7 @@ function RulesSheet({ isQM, aiHost, hasScreen }) {
 
 // ── settings form ────────────────────────────────────────────────────────────────
 function PlaylistEditor({ playlist, onChange }) {
-  const PLAYABLE = ALL_GENRES.filter(g => g.id !== 'insidejokes' && g.id !== 'custom')
+  const PLAYABLE = ALL_GENRES.filter(g => g.id !== 'insidejokes' && g.id !== 'custom' && !g.draft)
   const byType = Object.entries(GAME_TYPES).filter(([, t]) => t).map(([typeId, type]) => ({
     typeId, type, genres: PLAYABLE.filter(g => g.gameType === typeId),
   })).filter(g => g.genres.length > 0)
@@ -519,6 +526,16 @@ function SettingsForm({ localSettings, setS, setTimer, setPowerup, toggleGenreEx
       {settingsTab === 'game' && (
         <motion.div className="col gap-12" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <div className="card">
+            {/* AI Host */}
+            <div className="row gap-12" style={{ alignItems: 'center', marginBottom: 12 }}>
+              <div className="flex-1">
+                <div style={{ fontWeight: 700 }}>⚡ Buzz AI Host</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text2)' }}>
+                  {localSettings.aiHost ? 'On — Buzz hosts the game' : 'Off — no AI host'}
+                </div>
+              </div>
+              <Toggle checked={!!localSettings.aiHost} onChange={v => setS('aiHost', v)} />
+            </div>
             {/* Question Master */}
             <div className="row gap-12" style={{ alignItems: 'flex-start', marginBottom: showQMInfo ? 10 : 12 }}>
               <div className="flex-1">
@@ -712,7 +729,7 @@ function SettingsForm({ localSettings, setS, setTimer, setPowerup, toggleGenreEx
                 <div style={{ fontWeight: 700, marginBottom: 10 }}>
                   {cat === 'classic' ? '📚 Classic' : cat === 'themed' ? '🎭 Themed' : '🎨 Creative'}
                 </div>
-                {ALL_GENRES.filter(g => g.category === cat && g.id !== 'insidejokes' && g.id !== 'custom').map(g => (
+                {ALL_GENRES.filter(g => g.category === cat && g.id !== 'insidejokes' && g.id !== 'custom' && !g.draft).map(g => (
                   <div key={g.id} className="row gap-8"
                     style={{ padding: '6px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
                     onClick={() => toggleGenreExclude(g.id)}>
@@ -785,6 +802,33 @@ export default function LobbyScreen() {
   const aiHost = game?.settings?.aiHost ?? true
   const hasScreen = game?.settings?.hasScreen ?? false
 
+  // Buzz lobby voice lines
+  const { speakWithChance } = useBuzzSpeech()
+  const shouldSpeak = useShouldBuzzSpeak(game)
+  const buzzSpeaking = useBuzzSpeaking()
+  const prevPlayerCountRef = useRef(0)
+
+  // Lobby waiting — plays every 4 minutes while in the lobby
+  useEffect(() => {
+    if (!shouldSpeak || !aiHost) return
+    const id = setInterval(() => {
+      speakWithChance(getBuzzQuip('lobbyWaiting'), 'lobbyWaiting', null, 1.0)
+    }, 4 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [shouldSpeak, aiHost])
+
+  // Player joins — 10% chance per new arrival
+  useEffect(() => {
+    const humanPlayers = players.filter(p => ['host', 'player', 'cohost'].includes(p.role))
+    const count = humanPlayers.length
+    if (prevPlayerCountRef.current > 0 && count > prevPlayerCountRef.current) {
+      if (shouldSpeak && aiHost) {
+        speakWithChance(getBuzzQuip('playerJoins'), 'playerJoins', null, 0.10)
+      }
+    }
+    prevPlayerCountRef.current = count
+  }, [players.length, shouldSpeak, aiHost])
+
   function copyCode() {
     navigator.clipboard?.writeText(joinUrl).catch(() => {})
     setCopied(true)
@@ -798,9 +842,20 @@ export default function LobbyScreen() {
   }
 
   async function changePlayerRole(playerId, newRole) {
-    const updates = { [`games/${gameCode}/players/${playerId}/role`]: newRole }
-    if (newRole === 'gamescreen') updates[`games/${gameCode}/screens/tv`] = playerId
-    else if (game?.screens?.tv === playerId) updates[`games/${gameCode}/screens/tv`] = null
+    const isHost = playerId === game?.hostId
+    const updates = {}
+    if (newRole === 'gamescreen') {
+      updates[`games/${gameCode}/players/${playerId}/role`] = 'gamescreen'
+      updates[`games/${gameCode}/screens/tv`] = playerId
+      updates[`games/${gameCode}/settings/hasScreen`] = true
+    } else {
+      // Restore host role if this player is the host, otherwise set to player
+      updates[`games/${gameCode}/players/${playerId}/role`] = isHost ? 'host' : 'player'
+      if (game?.screens?.tv === playerId) {
+        updates[`games/${gameCode}/screens/tv`] = null
+        updates[`games/${gameCode}/settings/hasScreen`] = false
+      }
+    }
     await update(ref(db), updates)
   }
 
@@ -988,6 +1043,7 @@ export default function LobbyScreen() {
                     player={p}
                     isMe={p.id === myId}
                     hostId={game?.hostId}
+                    tvId={game?.screens?.tv}
                     onRoleChange={changePlayerRole}
                     onTransferHost={handleTransferHost}
                   />
@@ -1050,6 +1106,102 @@ export default function LobbyScreen() {
         </Modal>
 
         {qrOverlay}
+        <Toast />
+      </div>
+    )
+  }
+
+  // ── TV / GAME SCREEN LOBBY VIEW ──────────────────────────────────────────────
+  if (store.isGameScreen()) {
+    const humanPlayers = players.filter(p => ['host', 'player', 'cohost'].includes(p.role))
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, background: 'var(--bg)',
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        gap: 32, padding: '40px 48px',
+        fontFamily: 'var(--font-body)',
+      }}>
+        {/* Top: Buzz + quip */}
+        {aiHost && (
+          <div style={{ position: 'absolute', top: 28, left: 32 }}>
+            <BuzzHost
+              quip={getBuzzQuip('lobbyWaiting')}
+              event="idle"
+              visible
+              autoIdle
+              idleInterval={8000}
+              speakOnChange={shouldSpeak}
+              speaking={buzzSpeaking}
+            />
+          </div>
+        )}
+
+        {/* Centre: game code + QR */}
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            fontFamily: 'var(--font-head)',
+            fontSize: '1.1rem',
+            color: 'var(--text3)',
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+            marginBottom: 12,
+          }}>
+            Scan to join
+          </div>
+          <div style={{
+            background: '#fff',
+            borderRadius: 16,
+            padding: 16,
+            display: 'inline-block',
+            marginBottom: 20,
+          }}>
+            <QRCode value={joinUrl} size={200} />
+          </div>
+          <div style={{
+            fontFamily: 'var(--font-head)',
+            fontSize: '4rem',
+            letterSpacing: '0.2em',
+            color: 'var(--accent)',
+            lineHeight: 1,
+          }}>
+            {gameCode}
+          </div>
+          <div style={{ fontSize: '0.85rem', color: 'var(--text3)', marginTop: 8 }}>
+            {joinUrl}
+          </div>
+        </div>
+
+        {/* Players joined */}
+        {humanPlayers.length > 0 && (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{
+              fontSize: '0.72rem', color: 'var(--text3)', fontWeight: 600,
+              letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 14,
+            }}>
+              {humanPlayers.length} player{humanPlayers.length !== 1 ? 's' : ''} joined
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
+              {humanPlayers.map(p => (
+                <motion.div key={p.id} initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }}
+                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                  <Avatar src={p.avatar} avatarConfig={p.avatarConfig} name={p.name} colorHex={p.colorHex} size={60} />
+                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text)', maxWidth: 80, textAlign: 'center', wordBreak: 'break-word' }}>
+                    {p.name}
+                    {p.id === game?.hostId && <span style={{ color: 'var(--gold)', fontSize: '0.65rem', display: 'block' }}>HOST</span>}
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {humanPlayers.length === 0 && (
+          <div style={{ fontSize: '0.95rem', color: 'var(--text3)' }}>
+            Waiting for players to join...
+          </div>
+        )}
+
         <Toast />
       </div>
     )

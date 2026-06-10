@@ -1,6 +1,28 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useState, useEffect } from 'react'
 import { useStore } from '../store'
 import { getBuzzAudioUrl } from '../data/buzzAudio'
+
+// Module-level flag — shared across all hook instances on this device.
+// Lets useSound suppress SFX when Buzz is already speaking.
+let _buzzPlaying = false
+const _speakListeners = new Set()
+
+function _setPlaying(val) {
+  _buzzPlaying = val
+  _speakListeners.forEach(fn => fn(val))
+}
+
+export function isBuzzAudioPlaying() { return _buzzPlaying }
+
+/** Reactive hook — returns true while Buzz audio is playing. */
+export function useBuzzSpeaking() {
+  const [speaking, setSpeaking] = useState(_buzzPlaying)
+  useEffect(() => {
+    _speakListeners.add(setSpeaking)
+    return () => _speakListeners.delete(setSpeaking)
+  }, [])
+  return speaking
+}
 
 /**
  * useBuzzSpeech — plays Buzz's voice.
@@ -29,29 +51,28 @@ export function useBuzzSpeech() {
       URL.revokeObjectURL(objectUrlRef.current)
       objectUrlRef.current = null
     }
+    _setPlaying(false)
   }, [])
 
   const _playUrl = useCallback((url, isObjectUrl = false) => {
     const audio = new Audio(url)
     audioRef.current = audio
     audio.volume = store.sfxEnabled ? store.sfxVolume : 0
+    _setPlaying(true)
 
-    if (isObjectUrl) {
-      objectUrlRef.current = url
-      audio.addEventListener('ended', () => {
-        if (objectUrlRef.current === url) {
-          URL.revokeObjectURL(url)
-          objectUrlRef.current = null
-        }
-        if (audioRef.current === audio) audioRef.current = null
-      }, { once: true })
-    } else {
-      audio.addEventListener('ended', () => {
-        if (audioRef.current === audio) audioRef.current = null
-      }, { once: true })
+    const onEnd = () => {
+      if (audioRef.current === audio) { audioRef.current = null }
+      _setPlaying(false)
+      if (isObjectUrl && objectUrlRef.current === url) {
+        URL.revokeObjectURL(url)
+        objectUrlRef.current = null
+      }
     }
 
-    audio.play().catch(() => {})
+    if (isObjectUrl) objectUrlRef.current = url
+    audio.addEventListener('ended', onEnd, { once: true })
+    audio.addEventListener('error', onEnd, { once: true })
+    audio.play().catch(() => { _setPlaying(false) })
   }, [])
 
   /**
@@ -109,7 +130,18 @@ export function useBuzzSpeech() {
     }
   }, [stop, _playUrl])
 
-  return { speak, stop }
+  /**
+   * speakWithChance(text, event, genreId, probability)
+   * Only calls speak() if Math.random() < probability.
+   * Returns true if speech was triggered, false if skipped.
+   */
+  const speakWithChance = useCallback((text, event = 'idle', genreId = null, probability = 1.0) => {
+    if (Math.random() >= probability) return false
+    speak(text, event, genreId)
+    return true
+  }, [speak])
+
+  return { speak, speakWithChance, stop }
 }
 
 /**

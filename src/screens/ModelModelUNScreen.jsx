@@ -9,6 +9,7 @@ import { useStore } from '../store'
 import { useGame } from '../hooks/useGame'
 import { MMU_NATIONS, MMU_CARDS } from '../hooks/useGame'
 import { Avatar } from '../components/ui'
+import { ModelVillageScene } from '../components/ModelVillage'
 
 const INVEST_DURATION  = 30000
 const SELECT_DURATION  = 30000
@@ -605,120 +606,21 @@ function NegotiateView({ game, myId, isController }) {
   )
 }
 
-// Village scene items per nation emoji (or fallback)
-const VILLAGE_ITEMS = {
-  '🧱': ['🏗️', '🏢', '🔩'],
-  '🏺': ['🏛️', '🌿', '🫙'],
-  '🏛️': ['🏛️', '🌲', '🏚️'],
-  '📜': ['📚', '🌿', '🏚️'],
-  '🏆': ['🏆', '🌲', '🏠'],
-  '🫙': ['🏚️', '🌿', '🫙'],
-  '🌍': ['🌍', '🌲', '🏠'],
-  '✏️': ['📐', '🏚️', '🌿'],
-}
-function getVillageItems(emoji) {
-  return VILLAGE_ITEMS[emoji] || ['🏚️', '🌲', '🌿']
-}
-
 function VillageScene({ nation, player, flyingToMe, landedOnMe, showDestroyed, showShield, interceptions }) {
-  const villageItems = getVillageItems(nation?.emoji)
-  const shaking = flyingToMe.length > 0 && !showDestroyed
-
+  const inFlight = flyingToMe.length > 0 && !showDestroyed
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
-      {/* Avatar standing behind table */}
-      <motion.div
-        animate={shaking ? { x: [-2, 2, -2, 2, 0] } : showDestroyed ? { y: [0, -8, 20], opacity: [1, 1, 0] } : {}}
-        transition={{ duration: shaking ? 0.3 : 0.6, repeat: shaking ? Infinity : 0 }}
-        style={{ marginBottom: -8, zIndex: 3, position: 'relative' }}
-      >
-        <Avatar src={player?.avatar} name={player?.name} colorHex={player?.colorHex} size={52} />
-      </motion.div>
-
-      {/* Shield dome */}
-      <AnimatePresence>
-        {showShield && (
-          <motion.div
-            key="shield"
-            initial={{ scaleX: 0, scaleY: 0, opacity: 0 }}
-            animate={{ scaleX: 1, scaleY: 1, opacity: 1 }}
-            exit={{ scale: 1.4, opacity: 0 }}
-            transition={{ duration: 0.4, type: 'spring' }}
-            style={{
-              position: 'absolute', bottom: 32, left: '50%', transform: 'translateX(-50%)',
-              width: 160, height: 90,
-              borderRadius: '50% 50% 0 0',
-              background: 'radial-gradient(ellipse at 40% 30%, rgba(100,220,255,0.25), rgba(50,120,255,0.08))',
-              border: '2px solid rgba(100,200,255,0.7)',
-              boxShadow: '0 0 24px rgba(80,180,255,0.4), inset 0 0 16px rgba(80,180,255,0.15)',
-              zIndex: 15, pointerEvents: 'none',
-            }}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Mid-air interception flash */}
-      <AnimatePresence>
-        {interceptions.map((evt, i) => (
-          <motion.div
-            key={`intercept-${i}`}
-            initial={{ scale: 0.5, opacity: 1 }}
-            animate={{ scale: 2.5, opacity: 0 }}
-            transition={{ duration: 0.5 }}
-            style={{
-              position: 'absolute', top: -60, fontSize: '1.8rem',
-              pointerEvents: 'none', zIndex: 20,
-            }}
-          >
-            💥
-          </motion.div>
-        ))}
-      </AnimatePresence>
-
-      {/* Village table */}
-      <motion.div
-        animate={
-          showDestroyed
-            ? { scale: [1, 1.4, 0], rotate: [0, -20, 20, 0], opacity: [1, 1, 0] }
-            : shaking
-            ? { x: [-3, 3, -3, 3, 0] }
-            : {}
-        }
-        transition={{ duration: showDestroyed ? 0.6 : 0.25, repeat: shaking ? Infinity : 0 }}
-        style={{ position: 'relative', zIndex: 5 }}
-      >
-        {/* Surface of table */}
-        <div style={{
-          display: 'flex', alignItems: 'flex-end', gap: 6,
-          padding: '10px 18px 8px',
-          background: 'linear-gradient(180deg, rgba(120,90,60,0.35) 0%, rgba(80,60,40,0.5) 100%)',
-          border: '1.5px solid rgba(160,120,80,0.5)',
-          borderRadius: '8px 8px 0 0',
-          minWidth: 140,
-          justifyContent: 'center',
-        }}>
-          {showDestroyed ? (
-            <div style={{ fontSize: '2.8rem', lineHeight: 1 }}>💥</div>
-          ) : (
-            <>
-              <div style={{ fontSize: '2.2rem', lineHeight: 1 }}>{nation?.emoji || '🏛️'}</div>
-              {villageItems.map((item, i) => (
-                <div key={i} style={{ fontSize: i === 0 ? '1.4rem' : '1rem', lineHeight: 1 }}>{item}</div>
-              ))}
-            </>
-          )}
-        </div>
-        {/* Table front edge */}
-        <div style={{
-          height: 14,
-          background: 'linear-gradient(180deg, rgba(100,70,45,0.9) 0%, rgba(60,40,25,0.95) 100%)',
-          borderRadius: '0 0 6px 6px',
-          border: '1px solid rgba(160,120,80,0.4)',
-          borderTop: '2px solid rgba(200,160,100,0.5)',
-        }} />
-      </motion.div>
-
-      {/* Nation name */}
+      <ModelVillageScene
+        player={player}
+        roofColor={player?.colorHex || '#c2773a'}
+        nation={nation}
+        destroyed={showDestroyed}
+        inFlight={inFlight}
+        shielded={showShield}
+        interceptions={interceptions}
+        avatarSize={52}
+        scale={1.0}
+      />
       <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#c2773a', marginTop: 5, textAlign: 'center' }}>
         {nation?.name || 'Your Nation'}
       </div>
@@ -768,7 +670,7 @@ function ResolveView({ game, myId }) {
   const allFired = firedAll.length >= allEvents.length
   const showDestroyed = wasKilled && allFired && flyingToMe.length === 0
   const showSurvived = !wasKilled && allFired && landedOnMe.length > 0 && flyingToMe.length === 0
-  const showSafe = !wasKilled && allFired && landedOnMe.length === 0
+  const showSafe = !wasKilled && allFired && landedOnMe.length === 0 && timeLeft <= 0
   const shieldLanded = landedOnMe.filter(e => e.type === 'shielded')
   const interceptionLanded = landedOnMe.filter(e => e.type === 'intercepted')
   const showShield = shieldLanded.length > 0 && !showDestroyed
@@ -789,7 +691,6 @@ function ResolveView({ game, myId }) {
               const nation = nations[p.id]
               const hitFired = firedAll.some(e => e.target === p.id && e.type === 'hit')
               const savedFired = firedAll.some(e => e.target === p.id && (e.type === 'shielded' || e.type === 'intercepted'))
-              const items = getVillageItems(nation?.emoji)
               return (
                 <div key={p.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, minWidth: 58, textAlign: 'center' }}>
                   <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={20} />
@@ -798,17 +699,19 @@ function ResolveView({ game, myId }) {
                     transition={{ duration: 0.5 }}
                     style={{ opacity: hitFired ? 0.3 : 1, transition: 'opacity 0.4s' }}
                   >
-                    <div style={{
-                      background: 'rgba(80,60,40,0.35)',
-                      border: '1px solid rgba(140,100,60,0.4)',
-                      borderRadius: '4px 4px 0 0',
-                      padding: '4px 6px 2px',
-                      display: 'flex', gap: 2, alignItems: 'flex-end',
-                    }}>
-                      <span style={{ fontSize: '1rem' }}>{hitFired ? '💥' : nation?.emoji || '🏛️'}</span>
-                      {!hitFired && <span style={{ fontSize: '0.65rem' }}>{items[0]}</span>}
+                    {/* Tiny model village: colored roof triangle over beige wall */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      {hitFired ? (
+                        <span style={{ fontSize: '1.1rem' }}>💥</span>
+                      ) : (
+                        <svg width="40" height="28" viewBox="0 0 40 28" style={{ display: 'block' }}>
+                          <polygon points="4,14 20,3 36,14" fill={p.colorHex || '#c2773a'} />
+                          <rect x="7" y="14" width="26" height="14" fill="#c8b89a" />
+                          <rect x="15" y="17" width="10" height="11" fill="rgba(90,60,35,0.7)" rx="1" />
+                        </svg>
+                      )}
+                      <div style={{ height: 4, width: 40, background: 'rgba(80,55,30,0.8)', borderRadius: '0 0 3px 3px' }} />
                     </div>
-                    <div style={{ height: 5, background: 'rgba(80,55,30,0.8)', borderRadius: '0 0 3px 3px' }} />
                   </motion.div>
                   <div style={{ fontSize: '0.5rem', color: hitFired ? 'var(--text3)' : 'var(--text2)', lineHeight: 1.2 }}>{nation?.name}</div>
                   {savedFired && !hitFired && <div style={{ fontSize: '0.55rem' }}>🛡️</div>}

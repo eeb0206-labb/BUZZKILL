@@ -6,6 +6,8 @@ import { Toast, MuteButton } from '../components/ui'
 import { useSound } from '../hooks/useSound'
 import { getGenreById } from '../data/genres'
 import { db, ref, update } from '../firebase'
+import { useBuzzSpeech, useShouldBuzzSpeak } from '../hooks/useBuzzSpeech'
+import { getBuzzQuip } from '../data/hostQuips'
 
 // ── colour palette ────────────────────────────────────────────────────────────
 const COLOURS = ['#e63946','#f77f00','#f4d03f','#57cc99','#4895ef','#a855f7','#ffffff','#1a1a2e']
@@ -45,6 +47,18 @@ export default function DrawScreen() {
 
   const amIDrawer = myId === drawerId || (!drawerId && isController)
   const me = game?.players?.[myId]
+
+  // Artwork reveal — 60% chance when drawing data first appears
+  const { speakWithChance } = useBuzzSpeech()
+  const shouldSpeak = useShouldBuzzSpeak(game)
+  const aiHost = game?.settings?.aiHost ?? true
+  const prevDrawingRef = useRef(null)
+  useEffect(() => {
+    if (drawingData && !prevDrawingRef.current && shouldSpeak && aiHost) {
+      speakWithChance(getBuzzQuip('artworkReveal'), 'artworkReveal', null, 0.60)
+    }
+    prevDrawingRef.current = drawingData ?? null
+  }, [drawingData, shouldSpeak, aiHost])
   const winner = drawWinner ? game?.players?.[drawWinner] : null
 
   // ── pick prompt and drawer on mount (controller only) ─────────────────────

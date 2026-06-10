@@ -1,7 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getBuzzQuip } from '../data/hostQuips'
-import { useBuzzSpeech } from '../hooks/useBuzzSpeech'
+import { useBuzzSpeech, useBuzzSpeaking } from '../hooks/useBuzzSpeech'
+
+// Per-event default speak probabilities — applied when speakChance is not passed
+const DEFAULT_CHANCES = {
+  roundStart: 0.85,
+  roundEnd:   0.90,
+  votingOpen: 0.60,
+  artworkReveal: 0.60,
+  correct:    0.15,
+  wrong:      0.08,
+  playerJoins: 0.10,
+}
 
 // Auto-discover a custom Buzz image dropped into src/assets/images/buzz/
 const _buzzImgGlob = import.meta.glob(
@@ -28,20 +39,25 @@ export default function BuzzHost({
   event = 'idle',
   genreId = null,
   featured = false,
+  size = null,         // override face size (null = 44 compact / 88 featured)
   visible = true,
   autoIdle = false,
   idleInterval = 12000,
   speakOnChange = false,
+  speakChance = null,  // override probability; null = use DEFAULT_CHANCES[event] or 1.0
+  speaking = false,    // pass useBuzzSpeaking() result for live float animation
 }) {
   const [displayQuip, setDisplayQuip] = useState(propQuip || getBuzzQuip('idle'))
   const idleRef = useRef(null)
-  const { speak } = useBuzzSpeech()
+  const { speakWithChance } = useBuzzSpeech()
+
+  const chance = speakChance ?? DEFAULT_CHANCES[event] ?? 1.0
 
   // Sync controlled quip and speak it
   useEffect(() => {
     if (!propQuip) return
     setDisplayQuip(propQuip)
-    if (speakOnChange) speak(propQuip, event, genreId)
+    if (speakOnChange) speakWithChance(propQuip, event, genreId, chance)
   }, [propQuip, speakOnChange])
 
   // Auto-cycle idle quips
@@ -50,7 +66,7 @@ export default function BuzzHost({
     idleRef.current = setInterval(() => {
       const q = getBuzzQuip('idle')
       setDisplayQuip(q)
-      if (speakOnChange) speak(q, 'idle', null)
+      if (speakOnChange) speakWithChance(q, 'idle', null, 1.0)
     }, idleInterval)
     return () => clearInterval(idleRef.current)
   }, [autoIdle, idleInterval, speakOnChange])
@@ -71,7 +87,7 @@ export default function BuzzHost({
             width: featured ? '100%' : undefined,
           }}
         >
-          <BuzzFace size={featured ? 88 : 44} event={event} />
+          <BuzzFace size={size ?? (featured ? 88 : 44)} event={event} speaking={speaking} />
 
           <AnimatePresence mode="wait">
             <motion.div
@@ -135,20 +151,27 @@ export default function BuzzHost({
 
 // ── Buzz face — custom image or SVG fallback ─────────────────────────────────
 
-function BuzzFace({ size = 48, event = 'idle' }) {
+function BuzzFace({ size = 48, event = 'idle', speaking = false }) {
   // If a custom image exists in src/assets/images/buzz/, use it
   if (BUZZ_IMAGE) {
     const ringColor = event === 'correct' ? '#00ff88'
       : event === 'wrong' ? '#ff4455'
       : '#f7e027'
+    // Float up-down: faster + bigger amplitude while speaking
+    const floatY = speaking ? [0, -12, 0] : [0, -6, 0]
+    const floatDuration = speaking ? 0.7 : 2.8
     return (
       <motion.div
-        animate={
-          event === 'correct' ? { scale: [1, 1.1, 1] }
-          : event === 'wrong' ? { rotate: [0, -6, 6, -4, 0] }
-          : {}
-        }
-        transition={{ duration: 0.4 }}
+        animate={{
+          y: floatY,
+          ...(event === 'correct' ? { scale: [1, 1.1, 1] } : {}),
+          ...(event === 'wrong' ? { rotate: [0, -6, 6, -4, 0] } : {}),
+        }}
+        transition={{
+          y: { duration: floatDuration, repeat: Infinity, ease: 'easeInOut' },
+          scale: { duration: 0.4 },
+          rotate: { duration: 0.45, ease: 'easeInOut' },
+        }}
         style={{ flexShrink: 0, position: 'relative' }}
       >
         <img
@@ -278,10 +301,12 @@ function BuzzFace({ size = 48, event = 'idle' }) {
  * BuzzBanner — slim notification-style strip for player phone screens.
  * Shown between rounds, not during active gameplay.
  */
-export function BuzzBanner({ quip, event = 'roundEnd', visible = true, speakOnChange = false }) {
-  const { speak } = useBuzzSpeech()
+export function BuzzBanner({ quip, event = 'roundEnd', visible = true, speakOnChange = false, speakChance = null, size = 52 }) {
+  const { speakWithChance } = useBuzzSpeech()
+  const speaking = useBuzzSpeaking()
+  const chance = speakChance ?? DEFAULT_CHANCES[event] ?? 1.0
   useEffect(() => {
-    if (quip && speakOnChange) speak(quip, event, null)
+    if (quip && speakOnChange) speakWithChance(quip, event, null, chance)
   }, [quip, speakOnChange])
   return (
     <AnimatePresence>
@@ -294,33 +319,33 @@ export function BuzzBanner({ quip, event = 'roundEnd', visible = true, speakOnCh
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
+            gap: 12,
             background: 'rgba(10, 4, 28, 0.9)',
-            border: '1px solid rgba(247, 224, 39, 0.3)',
-            borderRadius: 8,
-            padding: '10px 14px',
+            border: '1px solid rgba(247, 224, 39, 0.35)',
+            borderRadius: 10,
+            padding: '12px 16px',
             width: '100%',
           }}
         >
           <div style={{ flexShrink: 0 }}>
-            <BuzzFace size={32} event="idle" />
+            <BuzzFace size={size} event={event} speaking={speaking} />
           </div>
-          <div>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{
               fontFamily: 'var(--font-mono)',
               fontSize: '0.55rem',
               color: 'rgba(247,224,39,0.55)',
               letterSpacing: '0.15em',
               textTransform: 'uppercase',
-              marginBottom: 2,
+              marginBottom: 3,
             }}>
               ⚡ BUZZ
             </div>
             <div style={{
               fontFamily: 'var(--font-mono)',
-              fontSize: '0.82rem',
+              fontSize: '0.88rem',
               color: '#f7e027',
-              lineHeight: 1.4,
+              lineHeight: 1.45,
             }}>
               {quip}
             </div>

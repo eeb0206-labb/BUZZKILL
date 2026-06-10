@@ -6,7 +6,7 @@ import { Avatar, TimerRing, Toast, MuteButton } from '../components/ui'
 import { getGenreById, GAME_TYPES } from '../data/genres'
 import BuzzHost from '../components/BuzzHost'
 import { getBuzzQuip } from '../data/hostQuips'
-import { useShouldBuzzSpeak } from '../hooks/useBuzzSpeech'
+import { useBuzzSpeech, useShouldBuzzSpeak } from '../hooks/useBuzzSpeech'
 
 export default function RoundPickScreen() {
   const store = useStore()
@@ -36,6 +36,17 @@ export default function RoundPickScreen() {
   const allPlayers = Object.values(game?.players || {})
 
   const shouldSpeak = useShouldBuzzSpeak(game)
+  const { speakWithChance } = useBuzzSpeech()
+  const prevDealAtRef = useRef(null)
+
+  // votingOpen — 60% chance when genres are first dealt
+  useEffect(() => {
+    if (!shouldSpeak || !aiHost) return
+    if (game?.dealGenresAt && game.dealGenresAt !== prevDealAtRef.current) {
+      speakWithChance(getBuzzQuip('votingOpen'), 'votingOpen', null, 0.60)
+    }
+    prevDealAtRef.current = game?.dealGenresAt ?? null
+  }, [game?.dealGenresAt, shouldSpeak, aiHost])
 
   const buzzGenreQuip = useMemo(() => {
     if (!aiHost || !winner) return null
@@ -93,6 +104,13 @@ export default function RoundPickScreen() {
     setDealing(true)
     dealGenres(gameCode, game).then(() => setDealing(false))
   }, [isController, game?.dealGenres, game?.devTestGenre, game?.settings?.playlist, game?.currentRound])
+
+  // ── Single genre: auto-lock after a brief "Up Next" display ─────────────────
+  useEffect(() => {
+    if (!isController || genres.length !== 1 || winner || dealing || lockingRef.current) return
+    const id = setTimeout(() => lockInGenre(genres[0]), 2500)
+    return () => clearTimeout(id)
+  }, [genres.length, isController, winner, dealing])
 
   // ── Load genres from existing game state ─────────────────────────────────────
   useEffect(() => {
@@ -230,20 +248,22 @@ export default function RoundPickScreen() {
       </div>
 
       <div className="screen-inner">
-        {/* Vote count + timer — timer only shown for non-controller (controller sees countdown banner) */}
-        <motion.div
-          className="row"
-          style={{ justifyContent: 'space-between', alignItems: 'center' }}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-        >
-          <div style={{ fontSize: '0.85rem', color: 'var(--text2)' }}>
-            {Object.keys(votes).length}/{voterCount} voted
-          </div>
-          {totalTime > 0 && timeLeft > 0 && !winner && (
-            <TimerRing seconds={timeLeft} total={totalTime} size={60} />
-          )}
-        </motion.div>
+        {/* Vote count + timer — only shown when there are multiple genres to vote on */}
+        {genres.length > 1 && (
+          <motion.div
+            className="row"
+            style={{ justifyContent: 'space-between', alignItems: 'center' }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+          >
+            <div style={{ fontSize: '0.85rem', color: 'var(--text2)' }}>
+              {Object.keys(votes).length}/{voterCount} voted
+            </div>
+            {totalTime > 0 && timeLeft > 0 && !winner && (
+              <TimerRing seconds={timeLeft} total={totalTime} size={60} />
+            )}
+          </motion.div>
+        )}
 
         {/* All-voted banner — visible on ALL screens, countdown synced via Firebase allVotedAt */}
         <AnimatePresence>
@@ -308,8 +328,42 @@ export default function RoundPickScreen() {
           </div>
         )}
 
-        {/* Genre cards */}
-        {genres.length > 0 && (
+        {/* No genres available — exclusion settings too strict */}
+        {genres.length === 0 && !dealing && (
+          <motion.div className="col center" style={{ padding: 40, gap: 14 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <div style={{ fontSize: '2.4rem' }}>😅</div>
+            <div style={{ fontWeight: 700, fontSize: '1rem' }}>No genres available</div>
+            <div style={{ fontSize: '0.82rem', color: 'var(--text2)', textAlign: 'center', lineHeight: 1.5, maxWidth: 260 }}>
+              All genres are excluded or unavailable. Go back to settings and enable at least one.
+            </div>
+            {isController && (
+              <button className="btn btn-ghost btn-sm" onClick={() => setScreen('lobby')}>← Back to Lobby</button>
+            )}
+          </motion.div>
+        )}
+
+        {/* Single genre — auto-locks in 2.5s, show "Up Next" instead of vote UI */}
+        {genres.length === 1 && !dealing && !winner && (
+          <motion.div className="col center" style={{ padding: 32, gap: 16 }}
+            initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
+              Up Next
+            </div>
+            <div style={{ fontSize: '4rem', lineHeight: 1 }}>{genres[0].emoji}</div>
+            <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.6rem', textAlign: 'center' }}>{genres[0].name}</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text2)' }}>
+              {GAME_TYPES[genres[0].gameType]?.label} · Get ready…
+            </div>
+            <motion.div
+              animate={{ opacity: [1, 0.35, 1] }}
+              transition={{ repeat: Infinity, duration: 1.2 }}
+              style={{ fontFamily: 'var(--font-mono)', fontSize: '1.2rem', color: genres[0].color || 'var(--accent)', fontWeight: 700 }}
+            >●●●</motion.div>
+          </motion.div>
+        )}
+
+        {/* Genre vote cards — only when 2+ genres */}
+        {genres.length > 1 && (
           <div className="col gap-12">
             {genres.map((genre, i) => {
               const voteCount = voteCountFor(genre.id)

@@ -694,6 +694,7 @@ export const CREATIVE_GENRES = [
     gameType: 'music',
     color: '#f72585',
     category: 'creative',
+    draft: true, // needs final clip URLs before going live
     questions: [
       // Format: { q: display label, a: "Song - Artist", hint: 'Year/hint', clipUrl: 'YouTube share URL with ?t=start_seconds' }
       // clipUrl: paste any https://youtu.be/... or https://www.youtube.com/watch?v=... link here.
@@ -876,6 +877,7 @@ export function getRandomGenres(count, excludeIds = [], usedIds = [], playerCoun
     !excludeIds.includes(g.id) &&
     g.id !== 'insidejokes' &&
     g.id !== 'custom' &&
+    !g.draft &&
     (!g.minPlayers || g.minPlayers <= playerCount)
   )
   const shuffle = [...available].sort(() => Math.random() - 0.5)

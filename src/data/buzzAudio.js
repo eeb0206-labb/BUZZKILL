@@ -6,13 +6,17 @@
  *
  * Folder → game event mapping:
  *
+ *   lobby-waiting/       → while players are joining in the lobby
+ *   player-joins/        → when a new player joins
  *   game-start/          → when the game first kicks off
  *   round-start/         → start of each round (quiz/game begins)
  *   round-end/           → round over screen
  *   game-end/            → final screen / winner announced
+ *   return-to-lobby/     → after game ends, returning to lobby
  *   correct/             → player answers correctly
  *   wrong/               → player answers incorrectly
  *   voting-open/         → genre voting opens
+ *   artwork-reveal/      → when revealing player artwork for voting
  *   idle/                → TV corner idle cycling lines
  *
  *   genre-quiz/                → quiz round intro
@@ -26,6 +30,8 @@
  *   genre-true-false/          → True or False intro
  *   genre-whodunnit/           → Whodunnit intro
  *   genre-music-bangers/       → Music Bangers intro
+ *   genre-logo/                → Logo round intro
+ *   genre-dingbats/            → Dingbats round intro
  */
 
 // Vite discovers all MP3s at build time; filenames get content-hashed in production.
@@ -49,16 +55,20 @@ for (const [path, url] of Object.entries(_raw)) {
 function resolveCategory(event, genreId) {
   if (event === 'genreReveal' && genreId) return `genre-${genreId}`
   const MAP = {
-    gameStart:    'game-start',
-    roundStart:   'round-start',
-    roundEnd:     'round-end',
-    gameEnd:      'game-end',
-    correct:      'correct',
-    wrong:        'wrong',
-    votingOpen:   'voting-open',
-    votingClosed: 'voting-open',   // share the voting-open folder for now
-    idle:         'idle',
-    playerWinning: 'round-end',    // fallback to round-end folder
+    lobbyWaiting:  'lobby-waiting',
+    playerJoins:   'player-joins',
+    gameStart:     'game-start',
+    roundStart:    'round-start',
+    roundEnd:      'round-end',
+    gameEnd:       'game-end',
+    returnToLobby: 'return-to-lobby',
+    correct:       'correct',
+    wrong:         'wrong',
+    votingOpen:    'voting-open',
+    votingClosed:  'voting-open',
+    artworkReveal: 'artwork-reveal',
+    idle:          'idle',
+    playerWinning: 'round-end',
     playerLosing:  'round-end',
     comebackTime:  'round-end',
   }

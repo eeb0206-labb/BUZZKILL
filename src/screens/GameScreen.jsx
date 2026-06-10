@@ -26,8 +26,9 @@ import { Avatar, QRCode } from '../components/ui'
 import { getGenreById, GAME_TYPES } from '../data/genres'
 import SettingsOverlay from '../components/SettingsOverlay'
 import BuzzHost from '../components/BuzzHost'
+import { ModelVillageScene } from '../components/ModelVillage'
 import { getBuzzQuip } from '../data/hostQuips'
-import { useBuzzSpeech } from '../hooks/useBuzzSpeech'
+import { useBuzzSpeech, useBuzzSpeaking } from '../hooks/useBuzzSpeech'
 
 const POWERUP_ICONS = { sneakPeek: '🔍', steal: '🤑', imposter: '😈', plagiarism: '📋', block: '🚫', doublePoints: '✖️' }
 
@@ -1589,16 +1590,6 @@ function ModelModelUNView({ game, players }) {
   }
   const info = PHASE_INFO[phase] || { icon: '🧱', label: 'Model Model UN', color: '#c2773a' }
 
-  // Village items for a given nation emoji
-  const VILLAGE_ITEMS_GS = {
-    '🧱': ['🏗️', '🔩'], '🏺': ['🌿', '🫙'], '🏛️': ['🌲', '🏚️'],
-    '📜': ['📚', '🏚️'], '🏆': ['🌲', '🏠'], '🫙': ['🌿', '🏚️'],
-    '🌍': ['🌲', '🏠'], '✏️': ['📐', '🌿'],
-  }
-  function getVillageItemsGS(emoji) {
-    return VILLAGE_ITEMS_GS[emoji] || ['🌲', '🏚️']
-  }
-
   // Nations grid
   function NationCard({ playerId }) {
     const nation = nations[playerId]
@@ -1614,16 +1605,15 @@ function ModelModelUNView({ game, players }) {
     const flyingHere = firedEvents.filter(e => e.target === playerId && !landedEvents.some(l => l._i === e._i))
     const inFlight = flyingHere.length > 0
     const p = players.find(pl => pl.id === playerId)
-    const villageItems = getVillageItemsGS(nation?.emoji)
 
     return (
       <div style={{
         position: 'relative', overflow: 'visible',
         display: 'flex', flexDirection: 'column', alignItems: 'center',
-        gap: 4, minWidth: 'clamp(80px, 11vw, 130px)',
+        gap: 2, minWidth: 'clamp(90px, 12vw, 150px)',
         opacity: isAlive ? 1 : 0.28, transition: 'opacity 0.4s',
       }}>
-        {/* Missile in-flight overlay */}
+        {/* Incoming missile 🚀 arc */}
         <AnimatePresence>
           {inFlight && flyingHere.map((e, mi) => {
             const fromLeft = mi % 2 === 0
@@ -1642,7 +1632,7 @@ function ModelModelUNView({ game, players }) {
           })}
         </AnimatePresence>
 
-        {/* Impact flash */}
+        {/* Impact flash overlay */}
         <AnimatePresence>
           {wasJustHit && (
             <motion.div key="flash"
@@ -1652,94 +1642,24 @@ function ModelModelUNView({ game, players }) {
           )}
         </AnimatePresence>
 
-        {/* Shield dome */}
-        <AnimatePresence>
-          {wasJustShielded && (
-            <motion.div key="shield"
-              initial={{ scaleX: 0, scaleY: 0, opacity: 0 }}
-              animate={{ scaleX: 1, scaleY: 1, opacity: 1 }}
-              exit={{ scale: 1.4, opacity: 0 }}
-              transition={{ duration: 0.3, type: 'spring' }}
-              style={{
-                position: 'absolute', bottom: '30%', left: '50%', transform: 'translateX(-50%)',
-                width: '90%', height: '50%',
-                borderRadius: '50% 50% 0 0',
-                background: 'radial-gradient(ellipse, rgba(80,180,255,0.2), transparent)',
-                border: '2px solid rgba(80,200,255,0.7)',
-                boxShadow: '0 0 16px rgba(80,180,255,0.5)',
-                pointerEvents: 'none', zIndex: 20,
-              }}
-            />
-          )}
-        </AnimatePresence>
+        {/* SVG village scene: avatar behind buildings, colored roof, table, shield */}
+        <ModelVillageScene
+          player={p}
+          roofColor={p?.colorHex || '#c2773a'}
+          nation={nation}
+          missiles={missiles[playerId] ?? 0}
+          destroyed={wasJustHit && !isAlive}
+          inFlight={inFlight}
+          shielded={wasJustShielded}
+          interceptions={wasJustIntercepted ? [1] : []}
+          avatarSize={28}
+          scale={0.78}
+        />
 
-        {/* Mid-air intercept flash */}
-        <AnimatePresence>
-          {wasJustIntercepted && (
-            <motion.div key="intercept"
-              initial={{ scale: 0.5, opacity: 1, y: -20 }}
-              animate={{ scale: 2, opacity: 0, y: -40 }}
-              transition={{ duration: 0.5 }}
-              style={{ position: 'absolute', top: 0, fontSize: 'clamp(0.7rem, 1.5vw, 1rem)', pointerEvents: 'none', zIndex: 25 }}
-            >
-              💥
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Avatar */}
-        {p && (
-          <motion.div
-            animate={wasJustHit ? { y: [0, -6, 12], opacity: [1, 1, 0.3] } : inFlight ? { x: [-1, 1, -1, 1, 0] } : {}}
-            transition={{ duration: inFlight ? 0.25 : 0.5, repeat: inFlight ? Infinity : 0 }}
-            style={{ marginBottom: -6, zIndex: 3 }}
-          >
-            <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={clamp24to36()} />
-          </motion.div>
-        )}
-
-        {/* Village table */}
-        <motion.div
-          animate={
-            wasJustHit ? { rotate: [-10, 10, -10, 0], scale: [1, 1.2, 0.7, 0.8] }
-            : inFlight ? { x: [-2, 2, -2, 2, 0] }
-            : {}
-          }
-          transition={{ duration: inFlight ? 0.25 : 0.5, repeat: inFlight ? Infinity : 0 }}
-          style={{ width: '100%' }}
-        >
-          <div style={{
-            background: 'linear-gradient(180deg, rgba(100,75,50,0.35) 0%, rgba(70,50,30,0.5) 100%)',
-            border: `1.5px solid ${wasJustHit ? '#e63946' : wasJustSaved ? '#57cc99' : inFlight ? 'rgba(230,57,70,0.5)' : 'rgba(140,100,60,0.45)'}`,
-            borderRadius: '6px 6px 0 0',
-            padding: 'clamp(4px, 0.8vw, 8px) clamp(6px, 1.2vw, 12px)',
-            display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 'clamp(2px, 0.4vw, 5px)',
-          }}>
-            {wasJustHit && !isAlive ? (
-              <span style={{ fontSize: 'clamp(1.1rem, 2.5vw, 1.7rem)' }}>💥</span>
-            ) : (
-              <>
-                <span style={{ fontSize: 'clamp(1rem, 2.2vw, 1.6rem)' }}>{nation?.emoji || '🏛️'}</span>
-                {villageItems.map((item, i) => (
-                  <span key={i} style={{ fontSize: 'clamp(0.65rem, 1.3vw, 0.95rem)' }}>{item}</span>
-                ))}
-              </>
-            )}
-          </div>
-          <div style={{
-            height: 'clamp(6px, 1.2vw, 10px)',
-            background: 'rgba(70,50,30,0.85)',
-            borderRadius: '0 0 4px 4px',
-            borderTop: '1.5px solid rgba(180,130,70,0.5)',
-          }} />
-        </motion.div>
-
-        {/* Nation name */}
+        {/* Nation name + stats */}
         <div style={{ fontWeight: 700, fontSize: 'clamp(0.5rem, 1.1vw, 0.68rem)', textAlign: 'center', lineHeight: 1.2, color: isAlive ? 'var(--text1)' : 'var(--text3)' }}>
           {nation?.name || p?.name || playerId}
         </div>
-
-        {/* Stats / card indicator */}
         {isAlive && !wasJustHit && (
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'clamp(0.45rem, 0.95vw, 0.62rem)', color: 'var(--text3)', textAlign: 'center', lineHeight: 1.4 }}>
             🚀{missiles[playerId] ?? 0} · 🛡️{defense[playerId] ?? 10}%
@@ -1751,8 +1671,6 @@ function ModelModelUNView({ game, players }) {
       </div>
     )
   }
-
-  function clamp24to36() { return 28 }
 
   const PHASE_INSTRUCTIONS = {
     rules:      'Players are reading the rules. Host will start the game shortly.',
@@ -2245,13 +2163,17 @@ function TVBuzzCorner({ game, gameCode }) {
   const [event, setEvent] = useState('idle')
   const prevStateRef = useRef(null)
   const prevQIndexRef = useRef(null)
+  const prevAnswerRevRef = useRef(false)
+  const prevWrongCountRef = useRef(0)
   const idleTimer = useRef(null)
-  const { speak } = useBuzzSpeech()
+  const { speakWithChance } = useBuzzSpeech()
+  const speaking = useBuzzSpeaking()
 
-  function setQuipAndSpeak(q, evt = 'generic') {
-    setQuip(q)
-    setEvent(evt)
-    speak(q, evt, null)
+  // Speak a quip, optionally gated by probability (0–1). Returns true if spoken.
+  function setQuipAndSpeak(q, evt = 'generic', chance = 1.0) {
+    const spoke = speakWithChance(q, evt, null, chance)
+    if (spoke) { setQuip(q); setEvent(evt) }
+    return spoke
   }
 
   function scheduleIdle() {
@@ -2260,7 +2182,7 @@ function TVBuzzCorner({ game, gameCode }) {
       const q = getBuzzQuip('idle')
       setQuip(q)
       setEvent('idle')
-      speak(q, 'idle', null)
+      speakWithChance(q, 'idle', null, 1.0)
       scheduleIdle()
     }, 14000 + Math.random() * 8000)
   }
@@ -2281,7 +2203,7 @@ function TVBuzzCorner({ game, gameCode }) {
 
     // First mount
     if (prevState === null) {
-      setQuipAndSpeak(getBuzzQuip('roundStart', { gameCode, round: game.currentRound }), 'roundStart')
+      setQuipAndSpeak(getBuzzQuip('roundStart', { gameCode, round: game.currentRound }), 'roundStart', 0.40)
       scheduleIdle()
       return
     }
@@ -2289,10 +2211,12 @@ function TVBuzzCorner({ game, gameCode }) {
     // State transitions
     if (state !== prevState) {
       if (state === 'quiz') {
-        setQuipAndSpeak(getBuzzQuip('roundStart', { gameCode, round: game.currentRound }), 'roundStart')
+        prevAnswerRevRef.current = false
+        prevWrongCountRef.current = 0
+        setQuipAndSpeak(getBuzzQuip('roundStart', { gameCode, round: game.currentRound }), 'roundStart', 0.40)
         scheduleIdle()
       } else if (state === 'round-over') {
-        setQuipAndSpeak(getBuzzQuip('roundEnd', { gameCode, round: game.currentRound }), 'roundEnd')
+        setQuipAndSpeak(getBuzzQuip('roundEnd', { gameCode, round: game.currentRound }), 'roundEnd', 0.40)
         scheduleIdle()
       } else if (state === 'final') {
         const sorted = Object.values(game.players || {})
@@ -2301,7 +2225,7 @@ function TVBuzzCorner({ game, gameCode }) {
         setQuipAndSpeak(getBuzzQuip('gameEnd', {
           winner: sorted[0]?.name,
           loser: sorted[sorted.length - 1]?.name,
-        }), 'gameEnd')
+        }), 'gameEnd', 1.0)
         scheduleIdle()
       } else if (state === 'round-pick') {
         const q = getBuzzQuip('idle')
@@ -2311,11 +2235,35 @@ function TVBuzzCorner({ game, gameCode }) {
       return
     }
 
-    // New question within same round
+    // New question within same round — reset answer tracking
     if (state === 'quiz' && qIdx !== prevQIdx && prevQIdx !== null) {
+      prevAnswerRevRef.current = false
+      prevWrongCountRef.current = 0
       scheduleIdle()
     }
   }, [game?.state, game?.currentQIndex, game?.currentRound])
+
+  // Correct answer (15%)
+  useEffect(() => {
+    const isRevealed = !!game?.answerRevealed
+    if (isRevealed && !prevAnswerRevRef.current) {
+      clearTimeout(idleTimer.current)
+      setQuipAndSpeak(getBuzzQuip('correct'), 'correct', 0.15)
+      scheduleIdle()
+    }
+    prevAnswerRevRef.current = isRevealed
+  }, [game?.answerRevealed])
+
+  // Wrong answer (8%)
+  useEffect(() => {
+    const count = game?.wrongAnswerers?.length || 0
+    if (count > prevWrongCountRef.current) {
+      clearTimeout(idleTimer.current)
+      setQuipAndSpeak(getBuzzQuip('wrong'), 'wrong', 0.08)
+      scheduleIdle()
+    }
+    prevWrongCountRef.current = count
+  }, [game?.wrongAnswerers?.length])
 
   if (!aiHost) return null
 
@@ -2325,9 +2273,9 @@ function TVBuzzCorner({ game, gameCode }) {
       bottom: 80,
       left: 20,
       zIndex: 2500,
-      maxWidth: 280,
+      maxWidth: 460,
     }}>
-      <BuzzHost quip={quip} event={event} visible autoIdle={false} />
+      <BuzzHost quip={quip} event={event} visible autoIdle={false} speaking={speaking} size={80} />
     </div>
   )
 }
