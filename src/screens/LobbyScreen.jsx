@@ -786,15 +786,21 @@ export default function LobbyScreen() {
     if (!gameCode) return
     const unsub = subscribeToGame(gameCode, (g) => {
       if (g.state === 'round-pick') store.setScreen('round-pick')
-      const myPlayer = g.players?.[myId]
-      if (myPlayer?.role) {
-        // Use getState() to avoid stale closure — myRole changes after initial mount
-        const currentRole = useStore.getState().myRole
-        if (myPlayer.role !== currentRole) useStore.getState().setMyRole(myPlayer.role)
-      }
     })
     return unsub
   }, [gameCode])
+
+  // Sync myRole whenever Firebase pushes a role change for this player.
+  // Watching game.players[myId].role directly is more reliable than a closure
+  // inside the subscription callback (avoids stale myId / closure bugs).
+  const myFirebaseRole = store.game?.players?.[myId]?.role
+  useEffect(() => {
+    if (!myFirebaseRole) return
+    const currentRole = useStore.getState().myRole
+    if (myFirebaseRole !== currentRole) {
+      useStore.getState().setMyRole(myFirebaseRole)
+    }
+  }, [myFirebaseRole])
 
   const players = Object.values(game?.players || {})
   const insideJokes = game?.insideJokes ? Object.values(game.insideJokes) : []
