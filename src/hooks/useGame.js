@@ -691,11 +691,17 @@ export function useGame() {
 
   // Transfer host role to another player
   const transferHost = useCallback(async (code, fromId, toId) => {
-    await update(ref(db), {
+    // Don't overwrite 'gamescreen' role — if the old host is already the TV screen, leave them as-is
+    const fromSnap = await get(ref(db, `games/${code}/players/${fromId}/role`))
+    const fromRole = fromSnap.val()
+    const updates = {
       [`games/${code}/hostId`]: toId,
       [`games/${code}/players/${toId}/role`]: 'host',
-      [`games/${code}/players/${fromId}/role`]: 'player',
-    })
+    }
+    if (fromRole !== 'gamescreen') {
+      updates[`games/${code}/players/${fromId}/role`] = 'player'
+    }
+    await update(ref(db), updates)
   }, [])
 
   // Steal a powerup from a target player (takes their highest-value one)
