@@ -1584,7 +1584,6 @@ function ModelModelUNView({ game, players }) {
     negotiate:  { icon: '🤝', label: 'Phase 4 — Negotiation', color: '#57cc99' },
     resolve:    { icon: '💥', label: 'Phase 5 — Resolution', color: '#e63946' },
     card:       { icon: '🃏', label: 'Special Cards', color: 'var(--gold)' },
-    splitsteal: { icon: '⚔️', label: 'Final Ultimatum', color: 'var(--gold)' },
     truce:      { icon: '🕊️', label: 'Peace Treaty', color: '#57cc99' },
     gameover:   { icon: '🏆', label: 'GAME OVER', color: 'var(--gold)' },
   }
@@ -1680,7 +1679,6 @@ function ModelModelUNView({ game, players }) {
     negotiate:  'Diplomats are talking. Players can see all shared intel and adjust their targets. Players may propose a truce.',
     resolve:    'MISSILES IN THE AIR! Watch the villages carefully…',
     card:       'Special intelligence cards are being distributed for next round.',
-    splitsteal: 'Two nations remain. They must choose: sign a truce, or launch a final strike.',
     gameover:   'The conflict is over. Calculating final scores…',
   }
 

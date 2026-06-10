@@ -60,16 +60,16 @@ export default function BuzzHost({
     if (speakOnChange) speakWithChance(propQuip, event, genreId, chance)
   }, [propQuip, speakOnChange])
 
-  // Auto-cycle idle quips
+  // Auto-cycle idle quips — uses the event prop so lobby uses lobbyWaiting clips
   useEffect(() => {
     if (!autoIdle) return
     idleRef.current = setInterval(() => {
-      const q = getBuzzQuip('idle')
+      const q = getBuzzQuip(event)
       setDisplayQuip(q)
-      if (speakOnChange) speakWithChance(q, 'idle', null, 1.0)
+      if (speakOnChange) speakWithChance(q, event, null, 1.0)
     }, idleInterval)
     return () => clearInterval(idleRef.current)
-  }, [autoIdle, idleInterval, speakOnChange])
+  }, [autoIdle, idleInterval, speakOnChange, event])
 
   return (
     <AnimatePresence>

@@ -1,7 +1,7 @@
 /**
  * ModelModelUNScreen — player-facing screen for Model Model UN arms-race game.
  * Each player is assigned a ceramic nation. Phases: rules → invest → select →
- * espionage → negotiate → resolve → card → (splitsteal | next round) → gameover
+ * espionage → negotiate → resolve → card → next round → gameover
  */
 import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -1006,7 +1006,7 @@ function SpectatorView({ game, myId, phase }) {
   const phaseLabels = {
     invest: '⚡ Arms Race', select: '🎯 Target Selection', espionage: '🔍 Espionage',
     negotiate: '🤝 Negotiation', resolve: '💥 Resolution', card: '🃏 Cards',
-    splitsteal: '⚔️ Final Ultimatum', gameover: '🏆 Game Over',
+    gameover: '🏆 Game Over',
   }
   const alivePlayers = Object.entries(game.mmuAlive || {}).filter(([, v]) => v).map(([id]) => id)
 
@@ -1173,15 +1173,7 @@ export default function ModelModelUNScreen() {
     return () => clearTimeout(t)
   }, [mmuPhase, isController])
 
-  // SplitSteal → check when all voted
-  useEffect(() => {
-    if (!isController || mmuPhase !== 'splitsteal') return
-    const votes = game.mmuSplitSteal || {}
-    const keys = Object.keys(votes).filter(k => votes[k])
-    if (alivePlayers.length === 2 && keys.length >= 2) {
-      finalizeMMUSplitSteal(gameCode, game)
-    }
-  }, [game?.mmuSplitSteal, mmuPhase, isController])
+  // splitsteal phase removed — outcome is now auto-resolved in checkMMUAfterResolve
 
   // Gameover → round-over (6s auto)
   useEffect(() => {
@@ -1200,8 +1192,8 @@ export default function ModelModelUNScreen() {
     )
   }
 
-  // Spectator view for eliminated players (except during gameover/splitsteal where they should see the result)
-  if (!isAlive && mmuPhase !== 'gameover' && mmuPhase !== 'splitsteal' && mmuPhase !== 'rules') {
+  // Spectator view for eliminated players (except during gameover where they should see the result)
+  if (!isAlive && mmuPhase !== 'gameover' && mmuPhase !== 'rules') {
     return (
       <div className="screen">
         <div className="topbar">
@@ -1230,7 +1222,8 @@ export default function ModelModelUNScreen() {
       case 'card':
         return <CardView game={game} myId={myId} />
       case 'splitsteal':
-        return <SplitStealView game={game} myId={myId} />
+        // Legacy fallback — phase no longer set; show waiting screen if encountered
+        return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)' }}>Finalising…</div>
       case 'gameover':
         return <GameoverView game={game} myId={myId} />
       default:

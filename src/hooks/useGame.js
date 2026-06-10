@@ -1746,11 +1746,17 @@ export function useGame() {
   }, [])
 
   const checkMMUAfterResolve = useCallback(async (code, game) => {
-    const snap = await get(ref(db, `games/${code}/mmuPhase`))
-    if (snap.val() !== 'resolve') return
-    const alivePlayers = Object.entries(game.mmuAlive || {}).filter(([, v]) => v).map(([id]) => id)
+    // Read phase + alive map from Firebase live to avoid stale closure bugs
+    const [phaseSnap, aliveSnap] = await Promise.all([
+      get(ref(db, `games/${code}/mmuPhase`)),
+      get(ref(db, `games/${code}/mmuAlive`)),
+    ])
+    if (phaseSnap.val() !== 'resolve') return
+    const aliveMap = aliveSnap.val() || game.mmuAlive || {}
+    const alivePlayers = Object.entries(aliveMap).filter(([, v]) => v).map(([id]) => id)
+
     if (alivePlayers.length <= 1) {
-      // Last nation wins the prize pot
+      // 0 survivors (mutual destruction) or 1 winner
       const updates = {}
       if (alivePlayers.length === 1) {
         const winnerId = alivePlayers[0]
@@ -1760,14 +1766,39 @@ export function useGame() {
       updates[`games/${code}/mmuPhase`] = 'gameover'
       updates[`games/${code}/mmuPhaseStartAt`] = Date.now()
       await update(ref(db), updates)
+
     } else if (alivePlayers.length === 2) {
-      await update(ref(db, `games/${code}`), {
-        mmuPhase: 'splitsteal',
-        mmuPhaseStartAt: Date.now(),
-        mmuSplitSteal: {},
-      })
+      // Two nations remain. Auto-resolve based on whether both voted for truce in negotiate.
+      // No secondary menu — truce vote IS the split/steal decision.
+      const truceVotes = game.mmuTruceVotes || {}
+      const bothTruced = alivePlayers.every(id => !!truceVotes[id])
+      const pool = game.mmuPrizePool || 0
+
+      if (bothTruced) {
+        // Both signed truce → split pot, end game
+        const share = Math.floor(pool / 2)
+        const updates = {}
+        alivePlayers.forEach(id => {
+          updates[`games/${code}/players/${id}/score`] = (game.players?.[id]?.score || 0) + share
+          updates[`games/${code}/players/${id}/roundScore`] = (game.players?.[id]?.roundScore || 0) + share
+        })
+        updates[`games/${code}/mmuPhase`] = 'gameover'
+        updates[`games/${code}/mmuPhaseStartAt`] = Date.now()
+        updates[`games/${code}/mmuSplitResult`] = { stealers: [], splitters: alivePlayers }
+        await update(ref(db), updates)
+      } else {
+        // No truce — deal cards and fight another round
+        const newCards = dealMMUCards(alivePlayers, game.mmuCards || {})
+        await update(ref(db, `games/${code}`), {
+          mmuPhase: 'card',
+          mmuPhaseStartAt: Date.now(),
+          mmuCards: newCards,
+          mmuHeatseekerUsed: {},
+        })
+      }
+
     } else {
-      // Deal cards and go to next round
+      // 3+ survivors — deal cards and go to next round
       const newCards = dealMMUCards(alivePlayers, game.mmuCards || {})
       await update(ref(db, `games/${code}`), {
         mmuPhase: 'card',

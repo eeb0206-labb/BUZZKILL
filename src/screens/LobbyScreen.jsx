@@ -777,6 +777,8 @@ export default function LobbyScreen() {
   const [profileMode, setProfileMode] = useState('name') // 'name' | 'avatar'
   const [profileSaving, setProfileSaving] = useState(false)
   const [playerTab, setPlayerTab] = useState('jokes') // 'jokes' | 'rules'
+  // Stable initial quip — must not be regenerated on every render or BuzzHost speaks constantly
+  const [lobbyBuzzQuip] = useState(() => getBuzzQuip('lobbyWaiting'))
 
   const joinUrl = typeof window !== 'undefined'
     ? `${window.location.origin}${window.location.pathname}?code=${gameCode}`
@@ -1132,11 +1134,11 @@ export default function LobbyScreen() {
         {aiHost && (
           <div style={{ position: 'absolute', top: 28, left: 32 }}>
             <BuzzHost
-              quip={getBuzzQuip('lobbyWaiting')}
-              event="idle"
+              quip={lobbyBuzzQuip}
+              event="lobbyWaiting"
               visible
               autoIdle
-              idleInterval={8000}
+              idleInterval={60000}
               speakOnChange={shouldSpeak}
               speaking={buzzSpeaking}
             />
