@@ -1,37 +1,52 @@
 /**
  * buzzAudio.js — pre-recorded Buzz clip discovery.
  *
- * Drop MP3s into src/assets/audio/buzz/{category}/ and redeploy.
- * Naming convention: 01.mp3, 02.mp3, 03.mp3 … (any filename works)
+ * Drop MP3s into the relevant folder and redeploy. Any filename works.
  *
- * Folder → game event mapping:
+ * ── Folder structure ──────────────────────────────────────────────────────────
  *
- *   lobby-waiting/       → while players are joining in the lobby
- *   player-joins/        → when a new player joins
- *   game-start/          → when the game first kicks off
- *   round-start/         → start of each round (quiz/game begins)
- *   round-end/           → round over screen
- *   game-end/            → final screen / winner announced
- *   return-to-lobby/     → after game ends, returning to lobby
- *   correct/             → player answers correctly
- *   wrong/               → player answers incorrectly
- *   voting-open/         → genre voting opens
- *   artwork-reveal/      → when revealing player artwork for voting
- *   idle/                → TV corner idle cycling lines
+ *  buzz/
+ *    buzz-host/                  Buzz as game host — non-game-specific lines
+ *      buzz-intro/               Who Buzz is / what we're doing tonight
+ *      lobby-waiting/            While players join
+ *      player-joins/             When a new player joins
+ *      game-start/               Game kicks off
+ *      game-end/                 Final screen / winner announced
+ *      return-to-lobby/          After game, heading back to lobby
+ *      idle/                     TV corner ambient cycling
  *
- *   genre-quiz/                → quiz round intro
- *   genre-speed-briefs/        → Speed Briefs intro
- *   genre-model-model-un/      → Model Model UN intro
- *   genre-hot-takes/           → Hot Takes intro
- *   genre-fill-gap/            → Fill the Gap intro
- *   genre-joke-off/            → Joke Off intro
- *   genre-order-up/            → Order Up intro
- *   genre-fart-direction/      → Fart Direction intro
- *   genre-true-false/          → True or False intro
- *   genre-whodunnit/           → Whodunnit intro
- *   genre-music-bangers/       → Music Bangers intro
- *   genre-logo/                → Logo round intro
- *   genre-dingbats/            → Dingbats round intro
+ *    buzz-game/                  Buzz during the game — in-game reactions + genre reveals
+ *      round-start/              Start of each round
+ *      round-end/                Round over screen
+ *      correct/                  Player answers correctly
+ *      wrong/                    Player answers incorrectly
+ *      voting-open/              Genre voting opens
+ *      artwork-reveal/           Revealing player artwork for voting
+ *      question/                 Question read-aloud (TTS fallback)
+ *      genre-reveal/             Buzz announces the chosen genre
+ *        quiz/
+ *        speed-briefs/
+ *        model-model-un/
+ *        hot-takes/
+ *        fill-gap/
+ *        joke-off/
+ *        order-up/
+ *        fart-direction/
+ *        true-false/
+ *        music-bangers/
+ *        logo/
+ *        dingbats/
+ *        draw-it/
+ *        outlandish-lawyers/
+ *
+ *    out-of-the-question/        Cassidy — Out of the Question host
+ *      intro/                    Genre reveal intro for this game
+ *      round-start/              Case opens, players write answers
+ *      vote/                     Voting phase — most frequent
+ *      caught/                   Imposter caught
+ *      escaped/                  Imposter escaped
+ *
+ *    (add future games as sibling folders to out-of-the-question/)
  */
 
 // Vite discovers all MP3s at build time; filenames get content-hashed in production.
@@ -40,53 +55,121 @@ const _raw = import.meta.glob(
   { eager: true, as: 'url' }
 )
 
-// Group by folder name: { 'correct': [url, url], 'wrong': [url], ... }
+// Key = path from buzz/ root, excluding filename.
+// e.g. "general/lobby-waiting", "game/correct", "out-of-the-question/vote"
 export const BUZZ_CLIPS = {}
 
 for (const [path, url] of Object.entries(_raw)) {
-  // path like: ../assets/audio/buzz/correct/01.mp3
-  const parts = path.split('/')
-  const category = parts[parts.length - 2]
+  const buzzIdx = path.indexOf('/buzz/') + '/buzz/'.length
+  const relative = path.slice(buzzIdx)
+  const parts = relative.split('/')
+  parts.pop() // remove filename
+  const category = parts.join('/')
   if (!BUZZ_CLIPS[category]) BUZZ_CLIPS[category] = []
   BUZZ_CLIPS[category].push(url)
 }
 
-// Maps a getBuzzQuip event (+ optional genreId) → folder name
+// ── Routing maps ─────────────────────────────────────────────────────────────
+
+// Maps genre IDs → subfolder name inside game/genre-reveal/
+const GENRE_REVEAL_FOLDER = {
+  musicbangers:      'music-bangers',
+  speedbriefs:       'speed-briefs',
+  modelmodelun:      'model-model-un',
+  fartdirection:     'fart-direction',
+  jokeof:            'joke-off',
+  fillgap:           'fill-gap',
+  trueorfalse:       'true-false',
+  ordersup:          'order-up',
+  hottake:           'hot-takes',
+  drawit:            'draw-it',
+  blitz:             'blitz',
+  outlandishlawyers: 'outlandish-lawyers',
+  // games with their own folders handle genreReveal via GAME_FOLDER below
+}
+
+// Maps genre IDs → their own top-level game folder.
+// These games have per-phase audio (intro, round-start, vote, etc.)
+const GAME_FOLDER = {
+  whodunnit: 'out-of-the-question',
+  // future: fillgap: 'fill-the-gap', jokeof: 'joke-off', etc.
+}
+
+// Maps game-specific event names → their audio folder path
+const GAME_EVENT_MAP = {
+  whodVote:    'out-of-the-question/vote',
+  whodCaught:  'out-of-the-question/caught',
+  whodEscaped: 'out-of-the-question/escaped',
+}
+
+// ── Resolver ─────────────────────────────────────────────────────────────────
+
 function resolveCategory(event, genreId) {
-  if (event === 'genreReveal' && genreId) return `genre-${genreId}`
+  // 1. Game-specific named events (whodVote, whodCaught, etc.)
+  if (GAME_EVENT_MAP[event]) return GAME_EVENT_MAP[event]
+
+  // 2. Genre reveal — prefer game's own intro/ folder, fall back to game/genre-reveal/
+  if (event === 'genreReveal' && genreId) {
+    if (GAME_FOLDER[genreId]) {
+      const key = `${GAME_FOLDER[genreId]}/intro`
+      if (BUZZ_CLIPS[key]?.length) return key
+    }
+    const folder = GENRE_REVEAL_FOLDER[genreId] || genreId
+    return `buzz-game/genre-reveal/${folder}`
+  }
+
+  // 3. Generic game events — check for a game-specific folder override first
+  //    e.g. out-of-the-question/round-start beats game/round-start when playing whodunnit
+  if (genreId && GAME_FOLDER[genreId]) {
+    const slug = event.replace(/([A-Z])/g, m => '-' + m.toLowerCase())
+    const key = `${GAME_FOLDER[genreId]}/${slug}`
+    if (BUZZ_CLIPS[key]?.length) return key
+  }
+
+  // 4. Generic fallback map
   const MAP = {
-    lobbyWaiting:  'lobby-waiting',
-    playerJoins:   'player-joins',
-    gameStart:     'game-start',
-    roundStart:    'round-start',
-    roundEnd:      'round-end',
-    gameEnd:       'game-end',
-    returnToLobby: 'return-to-lobby',
-    correct:       'correct',
-    wrong:         'wrong',
-    votingOpen:    'voting-open',
-    votingClosed:  'voting-open',
-    artworkReveal: 'artwork-reveal',
-    idle:          'idle',
-    playerWinning: 'round-end',
-    playerLosing:  'round-end',
-    comebackTime:  'round-end',
+    buzzIntro:     'buzz-host/buzz-intro',
+    lobbyWaiting:  'buzz-host/lobby-waiting',
+    playerJoins:   'buzz-host/player-joins',
+    gameStart:     'buzz-host/game-start',
+    gameEnd:       'buzz-host/game-end',
+    returnToLobby: 'buzz-host/return-to-lobby',
+    idle:          'buzz-host/idle',
+    roundStart:    'buzz-game/round-start',
+    roundEnd:      'buzz-game/round-end',
+    correct:       'buzz-game/correct',
+    wrong:         'buzz-game/wrong',
+    votingOpen:    'buzz-game/voting-open',
+    votingClosed:  'buzz-game/voting-open',
+    artworkReveal: 'buzz-game/artwork-reveal',
+    question:      'buzz-game/question',
+    playerWinning: 'buzz-game/round-end',
+    playerLosing:  'buzz-game/round-end',
+    comebackTime:  'buzz-game/round-end',
   }
   return MAP[event] || null
 }
 
+// ── Public API ────────────────────────────────────────────────────────────────
+
 /**
- * Returns a random pre-recorded URL for the given event, or null if
- * no clips exist for that category yet.
+ * Returns a random pre-recorded URL for the given event, or null if no clips exist.
  *
- * @param {string} event   — same event keys as getBuzzQuip
- * @param {string} genreId — e.g. 'quiz', 'speed-briefs' (for genreReveal events)
+ * @param {string} event   — event key (e.g. 'correct', 'genreReveal', 'whodVote')
+ * @param {string} genreId — current genre ID (e.g. 'whodunnit', 'speedbriefs')
  */
 export function getBuzzAudioUrl(event, genreId = null) {
   const category = resolveCategory(event, genreId)
   if (!category) return null
-  const clips = BUZZ_CLIPS[category]
-  if (!clips || clips.length === 0) return null
+
+  let clips = BUZZ_CLIPS[category] || []
+
+  // Idle pool also draws from lobby-waiting (they serve the same purpose)
+  if (event === 'idle') {
+    clips = [...clips, ...(BUZZ_CLIPS['buzz-host/lobby-waiting'] || [])]
+  }
+
+  if (!clips.length) return null
   return clips[Math.floor(Math.random() * clips.length)]
 }
 

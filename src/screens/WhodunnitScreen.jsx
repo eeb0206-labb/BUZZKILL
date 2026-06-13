@@ -165,26 +165,21 @@ export default function WhodunnitScreen() {
             <motion.div
               className="card col center gap-10"
               style={{
-                background: iAmImposter ? 'rgba(230,57,70,0.08)' : 'rgba(72,149,239,0.06)',
-                borderColor: iAmImposter ? 'rgba(230,57,70,0.3)' : 'rgba(72,149,239,0.2)',
+                background: 'rgba(72,149,239,0.06)',
+                borderColor: 'rgba(72,149,239,0.2)',
                 textAlign: 'center', padding: '24px 18px',
               }}
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: 'spring', stiffness: 300, damping: 25 }}
             >
-              <div style={{ fontSize: '2.5rem' }}>{iAmImposter ? '😈' : '🕵️'}</div>
-              <div style={{ fontSize: '0.75rem', letterSpacing: '0.1em', color: iAmImposter ? 'var(--red)' : 'var(--text3)', textTransform: 'uppercase', fontWeight: 700 }}>
-                {iAmImposter ? '⚠️ You are the IMPOSTER' : 'Your question'}
+              <div style={{ fontSize: '2.5rem' }}>🕵️</div>
+              <div style={{ fontSize: '0.75rem', letterSpacing: '0.1em', color: 'var(--text3)', textTransform: 'uppercase', fontWeight: 700 }}>
+                Your question
               </div>
               <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(1rem, 4vw, 1.3rem)', lineHeight: 1.3 }}>
                 {myPrompt}
               </div>
-              {iAmImposter && (
-                <div style={{ fontSize: '0.78rem', color: 'var(--red)', background: 'rgba(230,57,70,0.1)', padding: '6px 12px', borderRadius: 8 }}>
-                  Everyone else got a different question. Don't let them figure you out!
-                </div>
-              )}
             </motion.div>
 
             {/* Input */}

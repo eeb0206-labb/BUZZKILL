@@ -18,7 +18,7 @@ export const GAME_TYPES = {
   hottake:    { id: 'hottake',    label: 'Hot Take',        icon: '🔥', desc: 'Agree or disagree — crowd decides who\'s right' },
   fill:       { id: 'fill',       label: 'Fill the Gap',    icon: '✏️',  desc: 'Complete the sentence creatively' },
   blitz:      { id: 'blitz',      label: 'Trivia Blitz',    icon: '⚡',  desc: 'Fastest correct answer wins' },
-  whod:       { id: 'whod',       label: 'Whodunnit',       icon: '🕵️',  desc: 'One player answers a different question — find the imposter' },
+  whod:       { id: 'whod',       label: 'Out of the Question', icon: '🕵️',  desc: 'One player secretly answers a different question — find them' },
   music:      { id: 'music',      label: 'Music Bangers',   icon: '🎵',  desc: 'Hear the clip, buzz to name the song' },
   redemption: { id: 'redemption', label: 'Redemption Arc',  icon: '⚡',  desc: 'Second chance on questions you got wrong — 1.25× points' },
   lawyers:    { id: 'lawyers',    label: 'Outlandish Lawyers', icon: '⚖️',  desc: 'Debate an absurd statement — audience votes who was most convincing' },
@@ -722,7 +722,7 @@ export const CREATIVE_GENRES = [
   // Players share answers — group must vote on who gave a different answer.
   {
     id: 'whodunnit',
-    name: 'Whodunnit',
+    name: 'Out of the Question',
     emoji: '🕵️',
     gameType: 'whod',
     color: '#4895ef',
@@ -863,6 +863,17 @@ export const CREATIVE_GENRES = [
     category: 'creative',
     minPlayers: 3,
     // No questions array — brief selected at runtime from sbBriefs.js
+  },
+  {
+    id: 'crocgame',
+    name: 'Interior Crocodile Architecture',
+    emoji: '🐊',
+    gameType: 'croc',
+    color: '#1e6b3c',
+    category: 'creative',
+    minPlayers: 3,
+    // No questions array — questions loaded at runtime from crocgame.js
+    // Balderdash-style bluffing: write a fake answer, vote for the real one
   },
 ]
 

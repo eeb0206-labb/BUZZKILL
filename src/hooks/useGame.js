@@ -4,6 +4,7 @@ import { useStore } from '../store'
 import { PLAYER_COLORS, getRandomGenres, getGenreById } from '../data/genres'
 import { DEFAULT_SETTINGS } from '../store'
 import { SB_BRIEFS } from '../data/sbBriefs'
+import { getCrocQuestions } from '../data/questions/crocgame'
 
 // ── F-Art Direction colour helpers ───────────────────────────────────────────
 function hslToHexFD(h, s, l) {
@@ -253,31 +254,14 @@ function generatePlayerId() {
   return `p_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
-// ── initial powerups — everyone starts with one Double Points; nothing else ──────
+// ── initial powerups — everyone starts with one Double Points ────────────────────
 function buildInitialPowerups() {
-  return { sneakPeek: 0, steal: 0, imposter: 0, plagiarism: 0, block: 0, doublePoints: 1 }
+  return { doublePoints: 1 }
 }
 
-// Pool for random post-round deals — doublePoints is a starting gift, not in the pool
-const POWERUP_POOL = ['sneakPeek', 'steal', 'imposter', 'plagiarism', 'block']
-
-// Build a batch of Firebase updates that deals 1 random powerup to every eligible player
-// who is NOT currently in first place. First-place player(s) get nothing.
-// Also skips gamescreen roles.
-function buildDealPowerupUpdates(code, game) {
-  const players = Object.values(game.players || {}).filter(p => p.role !== 'gamescreen')
-  if (players.length === 0) return {}
-  const maxScore = Math.max(...players.map(p => p.score || 0))
-  const updates = {}
-  const dealtMap = {}
-  players.forEach(p => {
-    if ((p.score || 0) >= maxScore) return // first place — no powerup
-    const key = POWERUP_POOL[Math.floor(Math.random() * POWERUP_POOL.length)]
-    updates[`games/${code}/players/${p.id}/powerups/${key}`] = (p.powerups?.[key] || 0) + 1
-    dealtMap[p.id] = key
-  })
-  updates[`games/${code}/roundDealtPowerups`] = dealtMap
-  return updates
+// No powerups are dealt between rounds — double points is a one-time starting gift
+function buildDealPowerupUpdates(_code, _game) {
+  return {}
 }
 
 // ── color assignment ───────────────────────────────────────────────────────────
@@ -444,15 +428,43 @@ export function useGame() {
     await update(ref(db, `games/${code}/roundVotes`), { [playerId]: genreId })
   }, [])
 
-  // Lock in a genre and start round — also deals 1 random powerup to each eligible player
+  // Lock in a genre and start round. Lawyers stays on powerup-select (needs host setup);
+  // everything else goes straight to quiz.
   const selectGenre = useCallback(async (code, game, genreId, genreName, genreEmoji, gameType, gameColor) => {
-    const powerupUpdates = game ? buildDealPowerupUpdates(code, game) : {}
-    await update(ref(db), {
+    const isLawyers = gameType === 'lawyers'
+    const isCroc = gameType === 'croc'
+    const base = {
       [`games/${code}/currentGenre`]: { id: genreId, name: genreName, emoji: genreEmoji, gameType, color: gameColor },
-      [`games/${code}/state`]: 'powerup-select',
       [`games/${code}/powerupRound`]: {},
-      ...powerupUpdates,
-    })
+    }
+    if (isLawyers) {
+      await update(ref(db), { ...base, [`games/${code}/state`]: 'powerup-select' })
+    } else if (isCroc) {
+      const count = game?.settings?.questionsPerRound || 8
+      const questions = getCrocQuestions(count)
+      await update(ref(db), {
+        ...base,
+        [`games/${code}/state`]: 'quiz',
+        [`games/${code}/crocPhase`]: 'submit',
+        [`games/${code}/crocQIndex`]: 0,
+        [`games/${code}/crocQuestions`]: questions,
+        [`games/${code}/crocCurrentQ`]: questions[0],
+        [`games/${code}/crocBluffs`]: {},
+        [`games/${code}/crocOptions`]: [],
+        [`games/${code}/crocVotes`]: {},
+        [`games/${code}/crocScoreDeltas`]: {},
+        [`games/${code}/crocCorrectVoters`]: [],
+        [`games/${code}/crocNoneRight`]: false,
+        [`games/${code}/crocUniqueKnowledge`]: null,
+      })
+    } else {
+      await update(ref(db), {
+        ...base,
+        [`games/${code}/state`]: 'quiz',
+        [`games/${code}/currentQIndex`]: 0,
+        [`games/${code}/currentQ`]: null,
+      })
+    }
   }, [])
 
   // Buzz in (player)
@@ -494,12 +506,6 @@ export function useGame() {
       newPotAmount = potAmount + penalty
     }
 
-    // Plagiarism: if someone has this player as their target, they also score on correct answer
-    const plagiarismTargets = game.plagiarismTargets || {}
-    const plagiarists = Object.entries(plagiarismTargets)
-      .filter(([pid, target]) => target === buzzerId && correct)
-      .map(([pid]) => pid)
-
     const updates = {}
     updates[`games/${code}/players/${buzzerId}/score`] = (player.score || 0) + delta
     updates[`games/${code}/players/${buzzerId}/roundScore`] = (player.roundScore || 0) + delta
@@ -515,16 +521,6 @@ export function useGame() {
         if (!existing.some(w => w.q === wrongQ.q)) {
           updates[`games/${code}/playerWrongAnswers/${buzzerId}`] = [...existing, wrongQ]
         }
-      }
-    }
-
-    // Award plagiarists
-    for (const pid of plagiarists) {
-      const pp = game.players[pid]
-      if (pp) {
-        const pdelta = (100 + potAmount) * (game.powerupRound?.[pid] ? 2 : 1)
-        updates[`games/${code}/players/${pid}/score`] = (pp.score || 0) + pdelta
-        updates[`games/${code}/players/${pid}/roundScore`] = (pp.roundScore || 0) + pdelta
       }
     }
 
@@ -2009,6 +2005,100 @@ export function useGame() {
     await update(ref(db, `games/${code}`), { gamePaused: false, pauseRequests: {} })
   }, [])
 
+  // ── INTERIOR CROCODILE ARCHITECTURE ─────────────────────────────────────────
+
+  const submitCrocBluff = useCallback(async (code, playerId, bluff) => {
+    await update(ref(db), { [`games/${code}/crocBluffs/${playerId}`]: bluff.trim() })
+  }, [])
+
+  const revealCrocOptions = useCallback(async (code, game) => {
+    const bluffs = game?.crocBluffs || {}
+    const currentQ = game?.crocCurrentQ
+    if (!currentQ) return
+    const norm = s => s.toLowerCase().trim().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ')
+    const realNorm = norm(currentQ.a)
+    const options = [{ text: currentQ.a, isReal: true, authorId: null }]
+    Object.entries(bluffs).forEach(([authorId, bluffText]) => {
+      if (norm(bluffText) !== realNorm) {
+        options.push({ text: bluffText, isReal: false, authorId })
+      }
+    })
+    options.sort(() => Math.random() - 0.5)
+    await update(ref(db), {
+      [`games/${code}/crocPhase`]: 'vote',
+      [`games/${code}/crocOptions`]: options,
+      [`games/${code}/crocVotes`]: {},
+    })
+  }, [])
+
+  const submitCrocVote = useCallback(async (code, playerId, optionIdx) => {
+    await update(ref(db), { [`games/${code}/crocVotes/${playerId}`]: optionIdx })
+  }, [])
+
+  const revealCrocResults = useCallback(async (code, game) => {
+    const players = Object.values(game?.players || {}).filter(p => p.role === 'player')
+    const options = game?.crocOptions || []
+    const votes = game?.crocVotes || {}
+    const realIdx = options.findIndex(o => o.isReal)
+    const correctVoters = Object.entries(votes)
+      .filter(([, idx]) => Number(idx) === realIdx)
+      .map(([pid]) => pid)
+    const noneRight = correctVoters.length === 0
+    const uniqueKnowledge = correctVoters.length === 1 ? correctVoters[0] : null
+    const scoreDeltas = {}
+    players.forEach(p => {
+      let delta = 0
+      const myVote = votes[p.id]
+      if (myVote !== undefined && myVote !== null) {
+        delta += Number(myVote) === realIdx ? 150 : -25
+      }
+      const myOptIdx = options.findIndex(o => !o.isReal && o.authorId === p.id)
+      if (myOptIdx >= 0) {
+        delta += Object.values(votes).filter(v => Number(v) === myOptIdx).length * 25
+      }
+      scoreDeltas[p.id] = delta
+    })
+    if (noneRight) {
+      players.forEach(p => { scoreDeltas[p.id] = (scoreDeltas[p.id] || 0) - 25 })
+    }
+    if (uniqueKnowledge) {
+      scoreDeltas[uniqueKnowledge] = (scoreDeltas[uniqueKnowledge] || 0) + 25
+    }
+    const updates = {}
+    players.forEach(p => {
+      const d = scoreDeltas[p.id] || 0
+      updates[`games/${code}/players/${p.id}/score`] = (p.score || 0) + d
+      updates[`games/${code}/players/${p.id}/roundScore`] = (p.roundScore || 0) + d
+    })
+    updates[`games/${code}/crocPhase`] = 'reveal'
+    updates[`games/${code}/crocScoreDeltas`] = scoreDeltas
+    updates[`games/${code}/crocCorrectVoters`] = correctVoters
+    updates[`games/${code}/crocNoneRight`] = noneRight
+    updates[`games/${code}/crocUniqueKnowledge`] = uniqueKnowledge || null
+    await update(ref(db), updates)
+  }, [])
+
+  const nextCrocQuestion = useCallback(async (code, game) => {
+    const questions = game?.crocQuestions || []
+    const nextIdx = (game?.crocQIndex || 0) + 1
+    if (nextIdx >= questions.length) {
+      await update(ref(db, `games/${code}`), { state: 'round-over' })
+      return
+    }
+    await update(ref(db), {
+      [`games/${code}/crocPhase`]: 'submit',
+      [`games/${code}/crocQIndex`]: nextIdx,
+      [`games/${code}/crocCurrentQ`]: questions[nextIdx],
+      [`games/${code}/crocBluffs`]: {},
+      [`games/${code}/crocOptions`]: [],
+      [`games/${code}/crocVotes`]: {},
+      [`games/${code}/crocScoreDeltas`]: {},
+      [`games/${code}/crocCorrectVoters`]: [],
+      [`games/${code}/crocNoneRight`]: false,
+      [`games/${code}/crocUniqueKnowledge`]: null,
+    })
+  }, [])
+
   return {
     createGame, joinGame, subscribeToGame, updateGame, updatePlayer,
     dealGenres, voteForGenre, selectGenre,
@@ -2034,5 +2124,6 @@ export function useGame() {
     advanceMMUToResolve, checkMMUAfterResolve, advanceMMUToNextRound,
     submitMMUSplitSteal, finalizeMMUSplitSteal, checkMMUTruceVotes, endMMUGame,
     requestPause, cancelPauseRequest, unpauseGame,
+    submitCrocBluff, revealCrocOptions, submitCrocVote, revealCrocResults, nextCrocQuestion,
   }
 }

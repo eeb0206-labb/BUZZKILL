@@ -1,6 +1,8 @@
 import { useCallback, useRef, useState, useEffect } from 'react'
 import { useStore } from '../store'
 import { getBuzzAudioUrl } from '../data/buzzAudio'
+import GENRE_VOICES from '../data/genre-voices.json'
+import { generateContextualLine } from '../data/contextualLines'
 
 // Module-level flag — shared across all hook instances on this device.
 // Lets useSound suppress SFX when Buzz is already speaking.
@@ -22,6 +24,34 @@ export function useBuzzSpeaking() {
     return () => _speakListeners.delete(setSpeaking)
   }, [])
   return speaking
+}
+
+// Shared ElevenLabs fetch — avoids duplicating this inside useCallback closures.
+async function _tts(apiKey, voiceId, text, _playUrl) {
+  try {
+    const res = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      {
+        method: 'POST',
+        headers: {
+          'xi-api-key': apiKey,
+          'Content-Type': 'application/json',
+          Accept: 'audio/mpeg',
+        },
+        body: JSON.stringify({
+          text,
+          model_id: 'eleven_flash_v2_5',
+          voice_settings: { stability: 0.30, similarity_boost: 0.90, style: 0.75, use_speaker_boost: true },
+        }),
+      }
+    )
+    if (!res.ok) return
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    _playUrl(url, true)
+  } catch {
+    // Silent — caption always shows
+  }
 }
 
 /**
@@ -82,29 +112,62 @@ export function useBuzzSpeech() {
    * event   — event key (e.g. 'correct', 'genreReveal') — used to pick the right clip folder
    * genreId — genre ID string (for genreReveal events)
    */
-  const speak = useCallback(async (text, event = 'idle', genreId = null) => {
-    if (!text?.trim()) return
+  /**
+   * speak(text, event, genreId, gameContext)
+   *
+   * 80% of the time: plays a pre-recorded clip from the matching folder.
+   *         If no clip exists, falls through to TTS with `text`.
+   * 20% of the time: skips the clip intentionally and calls ElevenLabs TTS
+   *         with a contextual line generated from `gameContext` (player names,
+   *         scores, recent events). Falls back to a clip if TTS unavailable.
+   *
+   * This means audio plays 100% of the time (clip or TTS), and the game
+   * feels personal 20% of the time.
+   */
+  const speak = useCallback(async (text, event = 'idle', genreId = null, gameContext = null) => {
+    if (!text?.trim() && !gameContext) return
     stop()
 
-    // ── 1. Pre-recorded clip ────────────────────────────────────────────────
-    const clipUrl = getBuzzAudioUrl(event, genreId)
-    if (clipUrl) {
-      _playUrl(clipUrl)
+    const settings = store.getSettings()
+    const apiKey = settings.elevenLabsApiKey?.trim()
+    const voiceId = (genreId && GENRE_VOICES[genreId]) || settings.buzzVoiceId?.trim()
+    const canTTS = !!(apiKey && voiceId)
+
+    // Dice roll: 20% chance of contextual TTS (only if TTS is available)
+    const goContextual = canTTS && Math.random() < 0.20
+
+    // ── 80% path: pre-recorded clip ──────────────────────────────────────────
+    if (!goContextual) {
+      const clipUrl = getBuzzAudioUrl(event, genreId)
+      if (clipUrl) { _playUrl(clipUrl); return }
+      // No clip recorded yet — fall through to TTS with the passed text
+      if (!canTTS || !text?.trim()) return
+      // TTS with the standard quip text (not contextual)
+      await _tts(apiKey, voiceId, text, _playUrl)
       return
     }
 
-    // No pre-recorded clip — stay silent. ElevenLabs TTS is disabled.
-    // Caption text still shows regardless.
+    // ── 20% path: contextual TTS ─────────────────────────────────────────────
+    const ttsText = gameContext
+      ? (generateContextualLine(event, genreId, gameContext) || text)
+      : text
+    if (!ttsText?.trim()) {
+      // Generation failed — fall back to a clip
+      const clipUrl = getBuzzAudioUrl(event, genreId)
+      if (clipUrl) { _playUrl(clipUrl) }
+      return
+    }
+    await _tts(apiKey, voiceId, ttsText, _playUrl)
   }, [stop, _playUrl])
 
   /**
-   * speakWithChance(text, event, genreId, probability)
+   * speakWithChance(text, event, genreId, probability, gameContext)
    * Only calls speak() if Math.random() < probability.
    * Returns true if speech was triggered, false if skipped.
    */
-  const speakWithChance = useCallback((text, event = 'idle', genreId = null, probability = 1.0) => {
+  const speakWithChance = useCallback((text, event = 'idle', genreId = null, probability = 1.0, gameContext = null) => {
     if (Math.random() >= probability) return false
-    speak(text, event, genreId)
+    speak(text, event, genreId, gameContext)
     return true
   }, [speak])
 

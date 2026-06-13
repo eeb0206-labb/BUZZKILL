@@ -2,9 +2,8 @@ import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useStore } from '../store'
 import { useGame } from '../hooks/useGame'
-import { Avatar, TimerRing, Modal, Toast, MuteButton } from '../components/ui'
+import { Avatar, TimerRing, Toast, MuteButton } from '../components/ui'
 import { useSound } from '../hooks/useSound'
-import { db, ref, update } from '../firebase'
 import SettingsOverlay from '../components/SettingsOverlay'
 
 function answersMatch(submitted, correct) {
@@ -17,43 +16,20 @@ function answersMatch(submitted, correct) {
   return false
 }
 
-const POWERUP_INFO = {
-  sneakPeek:  { icon: '🔍', label: 'Sneak Peek',  color: '#4895ef' },
-  steal:      { icon: '🤑', label: 'Steal',        color: '#57cc99' },
-  imposter:   { icon: '😈', label: 'Imposter',     color: '#e63946' },
-  plagiarism: { icon: '📋', label: 'Plagiarism',   color: '#a855f7' },
-  block:      { icon: '🚫', label: 'Block',         color: '#f77f00' },
-}
-
-function getSneakPeek(answer) {
-  if (!answer) return '???'
-  const words = answer.split(' ').filter(w => w.length > 0)
-  if (words.length === 1) {
-    // First and last letter
-    const w = words[0]
-    if (w.length <= 2) return w[0] + '_'
-    return w[0] + '_'.repeat(w.length - 2) + w[w.length - 1]
-  }
-  // Initials of each word
-  return words.map(w => w[0].toUpperCase()).join(' ')
-}
 
 export default function QuizPlayerScreen() {
   const store = useStore()
   const { game, myId, gameCode } = { game: store.game, myId: store.myId, gameCode: store.gameCode }
   const setScreen = store.setScreen
-  const { subscribeToGame, buzzIn, usePowerup, useSecondLife, blockPlayer, setPlagiarismTarget, markAnswer, stealPowerup } = useGame()
+  const { subscribeToGame, buzzIn, usePowerup, activatePowerupRound, useSecondLife, markAnswer } = useGame()
   const { playBuzz, playFartSound, playSecondLife, playPowerupActivate, playTick, playCorrect, playWrong, startMusic } = useSound()
 
-  const [blocked, setBlocked] = useState(null) // reason string
+  const [blocked, setBlocked] = useState(null)
   const [showBlockedReason, setShowBlockedReason] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [sneakResult, setSneakResult] = useState(null)
   const [timerSeconds, setTimerSeconds] = useState(0)
   const [timerTotal, setTimerTotal] = useState(0)
   const timerRef = useRef(null)
-  const [powerupModal, setPowerupModal] = useState(null) // 'steal' | 'imposter' | 'plagiarism' | 'block'
-  const [targetModal, setTargetModal] = useState(null) // { powerup, onSelect }
   const [ripples, setRipples] = useState([])
   const [myAnswer, setMyAnswer] = useState('')
   const [answerSubmitted, setAnswerSubmitted] = useState(false)
@@ -68,8 +44,6 @@ export default function QuizPlayerScreen() {
   const someoneBuzzing = !!buzzer
   const wrongAnswerers = game?.wrongAnswerers || []
   const iWasWrong = wrongAnswerers.includes(myId)
-  const gameBlocked = game?.blocked?.[myId]
-  const isMyTurnForced = buzzer?.playerId === myId && buzzer?.forcedBy
 
   // Subscribe to game changes
   useEffect(() => {
@@ -78,7 +52,6 @@ export default function QuizPlayerScreen() {
       if (g.state === 'round-over') setScreen('round-over')
       if (g.state === 'final') setScreen('final')
       if (g.state === 'round-pick') setScreen('round-pick')
-      if (g.state === 'powerup-select') setScreen('powerup-select')
     })
     return unsub
   }, [gameCode])
@@ -138,20 +111,6 @@ export default function QuizPlayerScreen() {
       setTimeout(() => setRipples(r => r.filter(rr => rr.id !== ripple.id)), 600)
     }
 
-    // Check if blocked
-    if (gameBlocked) {
-      const blocker = game?.players?.[gameBlocked]
-      playFartSound()
-      setBlocked(`You're blocked by ${blocker?.name || 'someone'} 🚫`)
-      setShowBlockedReason(true)
-      setTimeout(() => setShowBlockedReason(false), 3000)
-      // Clear the block
-      const up = {}
-      up[`games/${gameCode}/blocked/${myId}`] = null
-      update(ref(db), up)
-      return
-    }
-
     if (iWasWrong) {
       playFartSound()
       setBlocked('You already answered this one! 💀')
@@ -174,7 +133,7 @@ export default function QuizPlayerScreen() {
       playBuzz(me?.colorId || 'blue')
       buzzIn(gameCode, myId, me?.colorId)
     }
-  }, [gameBlocked, iWasWrong, someoneBuzzing, isBuzzing, me, game, gameCode, myId])
+  }, [iWasWrong, someoneBuzzing, isBuzzing, me, game, gameCode, myId])
 
   // Use Second Life
   async function handleSecondLife() {
@@ -186,77 +145,17 @@ export default function QuizPlayerScreen() {
     await buzzIn(gameCode, myId, me?.colorId)
   }
 
-  // Sneak peek
-  async function handleSneakPeek() {
-    const success = await usePowerup(gameCode, myId, 'sneakPeek')
-    if (!success) { store.setToast({ message: 'No Sneak Peeks left!', icon: '🔍' }); return }
-    const answer = game?.currentQ?.a || '???'
-    setSneakResult(getSneakPeek(answer))
-    setTimeout(() => setSneakResult(null), 10000)
-  }
-
-  // Target picker for powerups
-  function openTargetPicker(powerupKey, onSelect) {
-    setTargetModal({ powerupKey, onSelect })
-  }
-
-  async function handleBlock() {
-    openTargetPicker('block', async (targetId) => {
-      const target = game?.players?.[targetId]
-      const success = await blockPlayer(gameCode, myId, targetId)
-      if (success) {
-        store.setToast({ message: `${target?.name} will be blocked next buzz! 🚫`, icon: '✓' })
-      }
-    })
-  }
-
-  async function handlePlagiarism() {
-    openTargetPicker('plagiarism', async (targetId) => {
-      const target = game?.players?.[targetId]
-      const success = await setPlagiarismTarget(gameCode, myId, targetId)
-      if (success) {
-        store.setToast({ message: `You'll copy ${target?.name}'s correct answers this round! 📋`, icon: '✓' })
-      }
-    })
-  }
-
-  async function handleImposter(targetId) {
-    const target = game?.players?.[targetId]
-    const ok = await usePowerup(gameCode, myId, 'imposter')
-    if (ok) {
-      await update(ref(db, `games/${gameCode}`), {
-        buzzer: { playerId: targetId, timestamp: Date.now(), forcedBy: myId, colorId: target?.colorId || 'red' },
-        questionRevealed: true,
-      })
-      store.setToast({ message: `${target?.name} must answer! 😈`, icon: '😈' })
-    } else {
-      store.setToast({ message: 'No Imposter uses left!', icon: '😈' })
-    }
-  }
-
-  const [stealTargetModal, setStealTargetModal] = useState(null) // targetId waiting for powerup pick
-  const [stealPowerupModal, setStealPowerupModal] = useState(null) // targetId → pick which powerup
-
-  async function handleSteal() {
-    openTargetPicker('steal', (targetId) => {
-      setStealPowerupModal(targetId)
-    })
-  }
-
-  async function executeSteal(targetId, powerupKey) {
-    const target = game?.players?.[targetId]
-    const ok = await stealPowerup(gameCode, myId, targetId, powerupKey)
-    if (ok) {
-      store.setToast({ message: `Stole ${POWERUP_INFO[powerupKey]?.icon} from ${target?.name}! 🤑`, icon: '✓' })
-    } else {
-      store.setToast({ message: 'Steal failed!', icon: '⚠️' })
-    }
-    setStealPowerupModal(null)
+  async function toggleDoublePoints() {
+    if (!myId || hasDoublePoints) return
+    const consumed = await usePowerup(gameCode, myId, 'doublePoints')
+    if (!consumed) return
+    await activatePowerupRound(gameCode, myId, true)
+    playPowerupActivate()
   }
 
   const myColor = me?.colorHex || '#a855f7'
   const hasDoublePoints = game?.powerupRound?.[myId]
-  const otherPlayers = Object.values(game?.players || {}).filter(p => p.id !== myId && p.role !== 'gamescreen')
+  const myDoublePointsCount = me?.powerups?.doublePoints || 0
 
   return (
     <div className="screen">
@@ -293,28 +192,6 @@ export default function QuizPlayerScreen() {
         )}
       </AnimatePresence>
 
-      {/* Forced to answer notification */}
-      <AnimatePresence>
-        {isMyTurnForced && (
-          <motion.div
-            className="blocked-overlay"
-            style={{ background: 'rgba(230,57,70,0.92)' }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <motion.div
-              style={{ fontSize: '3.5rem' }}
-              animate={{ rotate: [0,-10,10,-10,10,0], scale: [1,1.1,1] }}
-              transition={{ duration: 0.6 }}
-            >😈</motion.div>
-            <div className="blocked-reason" style={{ color: 'white' }}>You've been forced to answer!</div>
-            <div style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.8)', textAlign: 'center' }}>
-              by {game?.players?.[buzzer?.forcedBy]?.name || 'someone'}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <div className="screen-inner" style={{ gap: 12 }}>
         {/* Question (if revealed) */}
@@ -347,21 +224,6 @@ export default function QuizPlayerScreen() {
                 </motion.div>
               )}
               {/* Answer shown to no one on player screen */}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Sneak peek result */}
-        <AnimatePresence>
-          {sneakResult && (
-            <motion.div
-              className="sneak-peek-result"
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-            >
-              🔍 {sneakResult}
             </motion.div>
           )}
         </AnimatePresence>
@@ -467,57 +329,20 @@ export default function QuizPlayerScreen() {
           )}
         </AnimatePresence>
 
-        {/* Powerups panel */}
-        {Object.values(myPowerups).some(v => v > 0) && (
-          <div className="card">
-            <div style={{ fontWeight: 700, marginBottom: 8, fontSize: '0.85rem' }}>Your Powerups</div>
-            <div className="row gap-8" style={{ flexWrap: 'wrap', justifyContent: 'center' }}>
-              {/* Sneak Peek */}
-              {(myPowerups.sneakPeek || 0) > 0 && (
-                <button className="btn btn-ghost btn-sm" style={{ borderColor: '#4895ef', color: '#4895ef' }}
-                  onClick={handleSneakPeek}>
-                  🔍 Peek ×{myPowerups.sneakPeek}
-                </button>
-              )}
-
-              {/* Block */}
-              {(myPowerups.block || 0) > 0 && (
-                <button className="btn btn-ghost btn-sm" style={{ borderColor: '#f77f00', color: '#f77f00' }}
-                  onClick={handleBlock}>
-                  🚫 Block ×{myPowerups.block}
-                </button>
-              )}
-
-              {/* Plagiarism */}
-              {(myPowerups.plagiarism || 0) > 0 && !game?.plagiarismTargets?.[myId] && (
-                <button className="btn btn-ghost btn-sm" style={{ borderColor: '#a855f7', color: '#a855f7' }}
-                  onClick={handlePlagiarism}>
-                  📋 Copy ×{myPowerups.plagiarism}
-                </button>
-              )}
-              {game?.plagiarismTargets?.[myId] && (
-                <div style={{ fontSize: '0.8rem', color: 'var(--text2)' }}>
-                  📋 Copying {game?.players?.[game.plagiarismTargets[myId]]?.name}
-                </div>
-              )}
-
-              {/* Imposter */}
-              {(myPowerups.imposter || 0) > 0 && !someoneBuzzing && (
-                <button className="btn btn-ghost btn-sm" style={{ borderColor: '#e63946', color: '#e63946' }}
-                  onClick={() => openTargetPicker('imposter', handleImposter)}>
-                  😈 Force ×{myPowerups.imposter}
-                </button>
-              )}
-
-              {/* Steal */}
-              {(myPowerups.steal || 0) > 0 && (
-                <button className="btn btn-ghost btn-sm" style={{ borderColor: '#57cc99', color: '#57cc99' }}
-                  onClick={handleSteal}>
-                  🤑 Steal ×{myPowerups.steal}
-                </button>
-              )}
-            </div>
-          </div>
+        {/* Double Points powerup */}
+        {(myDoublePointsCount > 0 || hasDoublePoints) && (
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+            {hasDoublePoints ? (
+              <div className="card row gap-8" style={{ background: 'rgba(244,208,63,0.08)', borderColor: 'rgba(244,208,63,0.4)', justifyContent: 'center' }}>
+                <span style={{ color: 'var(--gold)', fontWeight: 700, fontSize: '0.85rem' }}>✖️ Double Points ACTIVE</span>
+              </div>
+            ) : (
+              <button className="btn btn-ghost btn-block" style={{ borderColor: '#f4d03f', color: '#f4d03f' }}
+                onClick={toggleDoublePoints}>
+                ✖️ Use Double Points this round
+              </button>
+            )}
+          </motion.div>
         )}
 
         {/* Mini scoreboard */}
@@ -534,69 +359,6 @@ export default function QuizPlayerScreen() {
           ))}
         </div>
       </div>
-
-      {/* Target picker modal */}
-      <Modal
-        show={!!targetModal}
-        onClose={() => setTargetModal(null)}
-        title="Choose a player"
-      >
-        <div className="col gap-8">
-          {otherPlayers.map(p => (
-            <motion.div
-              key={p.id}
-              className="player-row"
-              style={{ cursor: 'pointer' }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => {
-                targetModal?.onSelect?.(p.id)
-                setTargetModal(null)
-              }}
-            >
-              <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={40} />
-              <div className="flex-1" style={{ fontWeight: 600 }}>{p.name}</div>
-              <div style={{ fontFamily: 'var(--font-mono)', color: p.colorHex }}>{p.score || 0}</div>
-            </motion.div>
-          ))}
-        </div>
-      </Modal>
-
-      {/* Steal powerup picker — choose WHICH powerup to steal from target */}
-      <Modal
-        show={!!stealPowerupModal}
-        onClose={() => setStealPowerupModal(null)}
-        title="🤑 Steal which powerup?"
-      >
-        <div className="col gap-8">
-          {stealPowerupModal && Object.entries(game?.players?.[stealPowerupModal]?.powerups || {})
-            .filter(([key, count]) => key !== 'doublePoints' && count > 0)
-            .map(([key, count]) => {
-              const info = POWERUP_INFO[key]
-              if (!info) return null
-              return (
-                <motion.div
-                  key={key}
-                  className="player-row"
-                  style={{ cursor: 'pointer', borderColor: info.color }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => executeSteal(stealPowerupModal, key)}
-                >
-                  <div style={{ fontSize: '1.5rem' }}>{info.icon}</div>
-                  <div className="flex-1">
-                    <div style={{ fontWeight: 700, color: info.color }}>{info.label}</div>
-                  </div>
-                  <div style={{ fontFamily: 'var(--font-mono)', color: info.color }}>×{count}</div>
-                </motion.div>
-              )
-            })}
-          {stealPowerupModal && Object.entries(game?.players?.[stealPowerupModal]?.powerups || {})
-            .filter(([key, count]) => key !== 'doublePoints' && count > 0).length === 0 && (
-            <div style={{ color: 'var(--text3)', fontSize: '0.9rem', textAlign: 'center', padding: 16 }}>
-              This player has no powerups to steal!
-            </div>
-          )}
-        </div>
-      </Modal>
 
       <SettingsOverlay show={showSettings} onClose={() => setShowSettings(false)} />
       <Toast />

@@ -14,7 +14,7 @@ export default function RoundOverScreen() {
   const isController = store.isController()
   const setScreen = store.setScreen
   const { subscribeToGame, startNextRound, triggerRedemptionArc } = useGame()
-  const [redemptionLoading, setRedemptionLoading] = useState(false)
+  const [redemptionLoading, setRedemptionLoading] = useState(false) // used when last round triggers redemption
   const { playRoundOver } = useSound()
 
   const [showConfetti, setShowConfetti] = useState(true)
@@ -66,19 +66,17 @@ export default function RoundOverScreen() {
   const mvp = roundScores[0]
   const mvpDelta = mvp?.roundScore || 0
 
-  // Check if redemption arc is possible (any players have wrong answers)
-  const hasWrongAnswers = Object.values(game?.playerWrongAnswers || {}).some(qs => qs?.length > 0)
-
   async function handleNext() {
-    await startNextRound(gameCode, game)
-  }
-
-  async function handleRedemption() {
-    setRedemptionLoading(true)
-    const triggered = await triggerRedemptionArc(gameCode, game)
-    if (triggered) store.setScreen('quiz-host')
-    else await startNextRound(gameCode, game)
-    setRedemptionLoading(false)
+    if (isLastRound) {
+      // Always attempt Redemption Arc on last round; falls through to final if no wrong answers
+      setRedemptionLoading(true)
+      const triggered = await triggerRedemptionArc(gameCode, game)
+      if (triggered) store.setScreen('quiz-host')
+      else await startNextRound(gameCode, game)
+      setRedemptionLoading(false)
+    } else {
+      await startNextRound(gameCode, game)
+    }
   }
 
   return (
@@ -172,30 +170,18 @@ export default function RoundOverScreen() {
           </motion.div>
         )}
 
-        {/* Next round / Redemption Arc buttons */}
+        {/* Next round / Redemption Arc */}
         {isController && (
           <motion.div className="col gap-8" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}>
-            {/* Redemption Arc — only available on last round if anyone got questions wrong */}
-            {isLastRound && hasWrongAnswers && (
-              <motion.button
-                className="btn btn-gold btn-lg btn-block"
-                whileTap={{ scale: 0.97 }}
-                onClick={handleRedemption}
-                disabled={redemptionLoading}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.85, type: 'spring', stiffness: 300, damping: 22 }}
-              >
-                {redemptionLoading ? <div className="loading-dots"><span /><span /><span /></div>
-                  : '⚡ Redemption Arc — 1.25× points!'}
-              </motion.button>
-            )}
             <motion.button
-              className={`btn btn-lg btn-block ${isLastRound ? 'btn-ghost' : 'btn-primary'}`}
+              className="btn btn-lg btn-block btn-primary"
               whileTap={{ scale: 0.97 }}
               onClick={handleNext}
+              disabled={redemptionLoading}
             >
-              {isLastRound ? '🏆 Skip to Final Results' : `Next Round →`}
+              {redemptionLoading
+                ? <div className="loading-dots"><span /><span /><span /></div>
+                : isLastRound ? '⚡ Redemption Arc →' : `Next Round →`}
             </motion.button>
           </motion.div>
         )}

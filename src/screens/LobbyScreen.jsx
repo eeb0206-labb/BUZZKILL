@@ -816,14 +816,26 @@ export default function LobbyScreen() {
   const buzzSpeaking = useBuzzSpeaking()
   const prevPlayerCountRef = useRef(0)
 
-  // Lobby waiting — plays every 4 minutes while in the lobby
+  // First lobby visit = no rounds played yet; return visit = rounds have been played
+  const isReturnLobby = (game?.usedGenres?.length || 0) > 0
+
+  // First visit: Buzz introduces himself once after a short delay
   useEffect(() => {
-    if (!shouldSpeak || !aiHost) return
+    if (!shouldSpeak || !aiHost || isReturnLobby) return
+    const t = setTimeout(() => {
+      speakWithChance(getBuzzQuip('buzzIntro'), 'buzzIntro', null, 1.0)
+    }, 4000)
+    return () => clearTimeout(t)
+  }, [shouldSpeak, aiHost, isReturnLobby])
+
+  // Return visits only: idle lobby banter every ~60s
+  useEffect(() => {
+    if (!shouldSpeak || !aiHost || !isReturnLobby) return
     const id = setInterval(() => {
       speakWithChance(getBuzzQuip('lobbyWaiting'), 'lobbyWaiting', null, 1.0)
-    }, 4 * 60 * 1000)
+    }, 60 * 1000)
     return () => clearInterval(id)
-  }, [shouldSpeak, aiHost])
+  }, [shouldSpeak, aiHost, isReturnLobby])
 
   // Player joins — 10% chance per new arrival
   useEffect(() => {
@@ -1135,11 +1147,11 @@ export default function LobbyScreen() {
           <div style={{ position: 'absolute', top: 28, left: 32 }}>
             <BuzzHost
               quip={lobbyBuzzQuip}
-              event="lobbyWaiting"
+              event={isReturnLobby ? 'lobbyWaiting' : 'buzzIntro'}
               visible
-              autoIdle
+              autoIdle={isReturnLobby}
               idleInterval={60000}
-              speakOnChange={shouldSpeak}
+              speakOnChange={shouldSpeak && isReturnLobby}
               speaking={buzzSpeaking}
             />
           </div>

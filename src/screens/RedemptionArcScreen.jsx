@@ -126,15 +126,15 @@ export default function RedemptionArcScreen() {
 
   // ── QM marking ────────────────────────────────────────────────────────────
   async function handleMark(correct) {
-    // Redemption uses 125 points per correct (overriding the 100 default)
-    // We'll write it directly rather than using markAnswer which does 100
     const buzzerId = game?.buzzer?.playerId
     if (!buzzerId) return
     const player = game?.players?.[buzzerId]
     if (!player) return
 
     const updates = {}
-    const delta = correct ? 125 : -25
+    // 100 base pts + 25 bonus if this player originally got this question wrong in the game
+    const hadWrong = correct && (game?.playerWrongAnswers?.[buzzerId] || []).some(q => q.q === currentQ?.q)
+    const delta = correct ? (hadWrong ? 125 : 100) : -25
     updates[`games/${gameCode}/players/${buzzerId}/score`] = (player.score || 0) + delta
     updates[`games/${gameCode}/players/${buzzerId}/roundScore`] = (player.roundScore || 0) + delta
     if (!correct) {
@@ -172,7 +172,8 @@ export default function RedemptionArcScreen() {
     const buzzerId = myId
     const player = me
     if (!player) return
-    const delta = correct ? 125 : -25
+    const hadWrong = correct && (game?.playerWrongAnswers?.[buzzerId] || []).some(q => q.q === currentQ?.q)
+    const delta = correct ? (hadWrong ? 125 : 100) : -25
     const updates = {
       [`games/${gameCode}/players/${buzzerId}/score`]: (player.score || 0) + delta,
       [`games/${gameCode}/players/${buzzerId}/roundScore`]: (player.roundScore || 0) + delta,
@@ -224,7 +225,7 @@ export default function RedemptionArcScreen() {
           initial={{ opacity: 0 }} animate={{ opacity: 1 }}
         >
           <div style={{ fontSize: '0.8rem', color: 'var(--gold)', fontWeight: 700 }}>
-            ⚡ 1.25× points — show what you've learned!
+            ⚡ 100pts correct — +25 bonus if you got this one wrong before
           </div>
         </motion.div>
 
@@ -283,7 +284,7 @@ export default function RedemptionArcScreen() {
         {/* QM marking */}
         {isQM && isController && buzzedPlayer && (
           <div className="row gap-12">
-            <button className="btn btn-green btn-lg flex-1" onClick={() => handleMark(true)}>✓ Correct (+125)</button>
+            <button className="btn btn-green btn-lg flex-1" onClick={() => handleMark(true)}>✓ Correct (+100/125)</button>
             <button className="btn btn-red btn-lg flex-1" onClick={() => handleMark(false)}>✗ Wrong (-25)</button>
           </div>
         )}
@@ -329,7 +330,7 @@ export default function RedemptionArcScreen() {
                       initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
                       <motion.div style={{ fontSize: '1.5rem', fontWeight: 900 }}
                         animate={{ scale: [1, 1.05, 1] }} transition={{ repeat: Infinity, duration: 1.8 }}>BUZZ!</motion.div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--gold)' }}>⚡ 1.25× points</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--gold)' }}>⚡ Redemption</div>
                     </motion.div>
                   )}
                 </AnimatePresence>

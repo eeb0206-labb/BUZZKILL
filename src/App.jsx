@@ -33,6 +33,7 @@ import OrdersUpScreen from './screens/OrdersUpScreen'
 import FartDirectionScreen from './screens/FartDirectionScreen'
 import SpeedBriefsScreen from './screens/SpeedBriefsScreen'
 import ModelModelUNScreen from './screens/ModelModelUNScreen'
+import CrocScreen from './screens/CrocScreen'
 
 const SCREENS = {
   home: HomeScreen,
@@ -85,6 +86,7 @@ function getGameScreen(myRole, gameType) {
     case 'fartdirection':  return FartDirectionScreen
     case 'speedbriefs':    return SpeedBriefsScreen
     case 'modelmodelun':   return ModelModelUNScreen
+    case 'croc':           return CrocScreen
     default:
       // Standard quiz/blitz/fill — players and host get different screens
       return myRole === 'player' ? QuizPlayerScreen : QuizHostScreen

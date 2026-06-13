@@ -16,6 +16,7 @@
  *      hottake       → HotTakeView
  *      fill          → FillGapView
  *      whod          → WhodunnitView
+ *      croc          → CrocView
  */
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -341,46 +342,27 @@ function HotTakeView({ game, players }) {
 
         {/* Vote phase — three columns */}
         {phase === 'vote' && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ flex: 1, display: 'flex', gap: 12, overflow: 'hidden', minHeight: 0 }}>
-            {/* AGREE */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, background: 'rgba(255,68,0,0.06)', border: '1.5px solid rgba(255,68,0,0.2)', borderRadius: 14, padding: '12px 14px', overflow: 'hidden', minHeight: 0 }}>
-              <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.1rem', color: '#ff4400', textAlign: 'center' }}>🔥 AGREE</div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6, overflow: 'auto' }}>
-                {agreeVoters.map(p => (
-                  <motion.div key={p.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
-                    style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 10px', background: 'rgba(255,68,0,0.1)', borderRadius: 10 }}>
-                    <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={26} />
-                    <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{p.name}</span>
-                  </motion.div>
-                ))}
-              </div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.8rem', fontWeight: 700, color: '#ff4400', textAlign: 'center' }}>{agreeVoters.length}</div>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24 }}>
+            {/* Hidden until results — just show vote count and timer */}
+            <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(1rem, 2.5vw, 1.4rem)', color: 'var(--text2)', textAlign: 'center' }}>
+              🤫 Keeping things secret until everyone votes…
             </div>
-
-            {/* Centre — timer + pending */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, flexShrink: 0, minWidth: 72 }}>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '2rem', fontWeight: 900, color: timeLeft <= 3 ? 'var(--red)' : 'var(--text2)' }}>{timeLeft}s</div>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text3)', textAlign: 'center' }}>{totalVoted}/{players.length}<br />voted</div>
-              {pendingVoters.map(p => (
-                <motion.div key={p.id} animate={{ opacity: [0.35, 1, 0.35] }} transition={{ repeat: Infinity, duration: 1.5 }}>
-                  <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={20} />
-                </motion.div>
-              ))}
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '3rem', fontWeight: 900, color: timeLeft <= 3 ? 'var(--red)' : 'var(--text)' }}>
+              {timeLeft}s
             </div>
-
-            {/* DISAGREE */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, background: 'rgba(72,149,239,0.06)', border: '1.5px solid rgba(72,149,239,0.2)', borderRadius: 14, padding: '12px 14px', overflow: 'hidden', minHeight: 0 }}>
-              <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.1rem', color: '#4895ef', textAlign: 'center' }}>❄️ DISAGREE</div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6, overflow: 'auto' }}>
-                {disagreeVoters.map(p => (
-                  <motion.div key={p.id} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }}
-                    style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 10px', background: 'rgba(72,149,239,0.1)', borderRadius: 10 }}>
-                    <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={26} />
-                    <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{p.name}</span>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text3)' }}>
+              {totalVoted} / {players.length} voted
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+              {players.map(p => {
+                const voted = !!votes[p.id]
+                return (
+                  <motion.div key={p.id} animate={voted ? { scale: [1, 1.15, 1] } : { opacity: [0.4, 1, 0.4] }}
+                    transition={voted ? { duration: 0.3 } : { repeat: Infinity, duration: 1.5 }}>
+                    <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={voted ? 36 : 28} />
                   </motion.div>
-                ))}
-              </div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.8rem', fontWeight: 700, color: '#4895ef', textAlign: 'center' }}>{disagreeVoters.length}</div>
+                )
+              })}
             </div>
           </motion.div>
         )}
@@ -733,6 +715,246 @@ function WhodunnitView({ game, players }) {
         )}
       </div>
       <ScoreBar players={players} game={game} />
+    </div>
+  )
+}
+
+// ── INTERIOR CROCODILE ARCHITECTURE VIEW ─────────────────────────────────────
+function CrocCharacter({ phase }) {
+  const jawDeg = phase === 'submit' ? 0 : phase === 'vote' ? 20 : 28
+  return (
+    <svg viewBox="0 0 460 220" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', maxWidth: 280, display: 'block' }}>
+      <defs>
+        <style>{`
+          @keyframes crocBreath{0%,100%{transform:translateY(0)}50%{transform:translateY(4px)}}
+          @keyframes crocBlink{0%,87%,100%{transform:scaleY(0)}93%{transform:scaleY(1)}}
+          @keyframes crocTailWag{0%,100%{transform:rotate(0deg)}30%{transform:rotate(10deg)}70%{transform:rotate(-8deg)}}
+          .croc-body-group{animation:crocBreath 3.2s ease-in-out infinite}
+          .croc-tail{transform-origin:68px 155px;animation:crocTailWag 2.4s ease-in-out infinite}
+          .croc-eyelid{transform-origin:372px 94px;transform:scaleY(0);animation:crocBlink 4.8s ease-in-out infinite}
+        `}</style>
+      </defs>
+      {/* Shadow */}
+      <ellipse cx="205" cy="216" rx="155" ry="8" fill="rgba(0,0,0,0.18)" />
+      {/* Tail */}
+      <g className="croc-tail">
+        <path d="M 68,148 C 48,143 24,139 5,151 C 24,165 50,168 68,165" fill="#1e6b3c" />
+      </g>
+      <g className="croc-body-group">
+        {/* Body */}
+        <ellipse cx="185" cy="160" rx="122" ry="48" fill="#1e6b3c" />
+        {/* Belly */}
+        <ellipse cx="182" cy="170" rx="88" ry="33" fill="#52b788" />
+        {/* Back ridges */}
+        {[78, 104, 130, 156, 182, 208, 232, 256].map((x, i) => (
+          <polygon key={i} points={`${x},112 ${x + 7},90 ${x + 14},112`} fill="#0d3d20" />
+        ))}
+        {/* Legs */}
+        <rect x="90" y="200" width="30" height="18" rx="8" fill="#0d3d20" />
+        <rect x="128" y="202" width="27" height="16" rx="7" fill="#0d3d20" />
+        <rect x="220" y="200" width="30" height="18" rx="8" fill="#0d3d20" />
+        <rect x="256" y="202" width="27" height="16" rx="7" fill="#0d3d20" />
+        {/* Neck */}
+        <path d="M 278,120 C 294,108 312,106 323,111 L 327,168 C 313,174 297,170 282,163" fill="#1e6b3c" />
+        {/* Head */}
+        <path d="M 317,103 C 338,91 382,89 415,98 L 418,162 C 390,169 344,168 321,159 Z" fill="#1e6b3c" />
+        {/* Eye brow */}
+        <ellipse cx="372" cy="100" rx="15" ry="9" fill="#0d3d20" />
+        {/* Mouth interior (behind jaws) */}
+        <ellipse cx="420" cy="118" rx="37" ry="7" fill="#b52a2a" />
+        {/* Upper jaw */}
+        <path d="M 386,98 C 408,88 440,90 456,100 L 458,118 C 440,114 408,112 388,118 Z" fill="#1e6b3c" />
+        {/* Upper teeth */}
+        {[392, 406, 420, 434, 446].map((x, i) => (
+          <polygon key={i} points={`${x},118 ${x + 5.5},105 ${x + 11},118`} fill="#f0efe8" />
+        ))}
+        {/* Lower jaw — Framer Motion animate */}
+        <motion.g
+          style={{ transformOrigin: '386px 118px' }}
+          animate={{ rotate: jawDeg }}
+          transition={{ duration: 0.45, ease: 'easeInOut' }}
+        >
+          <path d="M 386,118 C 408,126 440,122 458,112 L 460,132 C 440,140 408,140 388,132 Z" fill="#27913e" />
+          {[394, 408, 422, 436].map((x, i) => (
+            <polygon key={i} points={`${x},118 ${x + 5.5},132 ${x + 11},118`} fill="#f0efe8" />
+          ))}
+        </motion.g>
+        {/* Eye */}
+        <circle cx="372" cy="108" r="14" fill="#f0efe8" />
+        <circle cx="372" cy="108" r="9.5" fill="#c9a227" />
+        <circle cx="374" cy="110" r="6" fill="#0d0d0d" />
+        <circle cx="369" cy="105" r="2.2" fill="white" />
+        {/* Eyelid */}
+        <ellipse className="croc-eyelid" cx="372" cy="94" rx="14" ry="8" fill="#1e6b3c" />
+        {/* Nostril */}
+        <circle cx="453" cy="107" r="3.5" fill="#0d3d20" />
+      </g>
+    </svg>
+  )
+}
+
+function CrocView({ game, players }) {
+  const phase = game?.crocPhase || 'submit'
+  const currentQ = game?.crocCurrentQ
+  const options = game?.crocOptions || []
+  const bluffs = game?.crocBluffs || {}
+  const votes = game?.crocVotes || {}
+  const scoreDeltas = game?.crocScoreDeltas || {}
+  const correctVoters = game?.crocCorrectVoters || []
+  const noneRight = game?.crocNoneRight || false
+  const uniqueKnowledge = game?.crocUniqueKnowledge
+  const qIndex = game?.crocQIndex || 0
+  const totalQs = (game?.crocQuestions || []).length
+  const activePlayers = players.filter(p => p.role === 'player')
+
+  const submittedCount = Object.keys(bluffs).length
+  const votedCount = Object.keys(votes).length
+
+  const phaseLabel = {
+    submit: '✍️ Write your bluff',
+    vote: '🗳️ Vote for the real answer',
+    reveal: '🐊 Reveal!',
+  }[phase] || ''
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden', minHeight: 0 }}>
+      {/* Left: croc character */}
+      <div style={{ width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '12px 0 24px 16px', gap: 10 }}>
+        <div style={{ fontSize: '0.65rem', color: '#52b788', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, textAlign: 'center' }}>
+          {phaseLabel}
+        </div>
+        <CrocCharacter phase={phase} />
+        <div style={{ fontSize: '0.68rem', color: 'var(--text3)', textAlign: 'center', lineHeight: 1.4 }}>
+          {phase === 'submit' && `${submittedCount}/${activePlayers.length} bluffs written`}
+          {phase === 'vote' && `${votedCount}/${activePlayers.length} voted`}
+          {phase === 'reveal' && (noneRight ? '🐊 Nobody guessed right!' : `${correctVoters.length} guessed correctly`)}
+        </div>
+      </div>
+
+      {/* Right: question + content */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '16px 20px 12px 12px', gap: 12, overflow: 'hidden', minHeight: 0 }}>
+        {/* Question */}
+        {currentQ && (
+          <motion.div key={qIndex} initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+            style={{ background: 'rgba(30,107,60,0.08)', border: '1.5px solid rgba(30,107,60,0.3)', borderRadius: 14, padding: '12px 18px', flexShrink: 0 }}>
+            <div style={{ fontSize: '0.65rem', color: '#52b788', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 6 }}>
+              Q{qIndex + 1} / {totalQs}
+            </div>
+            <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(0.95rem, 2vw, 1.3rem)', lineHeight: 1.5 }}>
+              {currentQ.q}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Submit phase: waiting list */}
+        {phase === 'submit' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {activePlayers.map(p => {
+                const done = !!bluffs[p.id]
+                return (
+                  <motion.div key={p.id} animate={done ? { scale: [1, 1.12, 1] } : {}} transition={{ duration: 0.3 }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 10,
+                      background: done ? 'rgba(30,107,60,0.12)' : 'var(--surface)',
+                      border: `1.5px solid ${done ? 'rgba(82,183,136,0.5)' : 'var(--border)'}`,
+                      fontSize: '0.82rem',
+                    }}>
+                    <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={24} />
+                    <span style={{ fontWeight: 600 }}>{p.name}</span>
+                    <span style={{ fontSize: '0.9rem' }}>{done ? '✓' : '…'}</span>
+                  </motion.div>
+                )
+              })}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Vote phase: options */}
+        {phase === 'vote' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ fontSize: '0.72rem', color: '#52b788', fontWeight: 700, marginBottom: 2 }}>
+              Players vote on phones — live counts:
+            </div>
+            {options.map((opt, idx) => {
+              const vc = Object.values(votes).filter(v => Number(v) === idx).length
+              return (
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'var(--surface)', border: '1.5px solid var(--border)' }}>
+                  <div style={{ fontWeight: 700, color: 'var(--text3)', fontSize: '0.78rem', minWidth: 20 }}>
+                    {String.fromCharCode(65 + idx)}.
+                  </div>
+                  <div style={{ flex: 1, fontSize: '0.9rem' }}>{opt.text}</div>
+                  {vc > 0 && (
+                    <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#52b788', fontSize: '0.85rem' }}>
+                      {vc} 🗳️
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </motion.div>
+        )}
+
+        {/* Reveal phase: options with authors + score deltas */}
+        {phase === 'reveal' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {noneRight && (
+              <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+                style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(181,42,42,0.1)', border: '1.5px solid rgba(181,42,42,0.35)', textAlign: 'center', fontSize: '0.85rem', fontWeight: 700, color: '#e05252' }}>
+                🐊 Nobody guessed right — extra −25 for everyone!
+              </motion.div>
+            )}
+            {options.map((opt, idx) => {
+              const author = opt.authorId ? game?.players?.[opt.authorId] : null
+              const vc = Object.values(votes).filter(v => Number(v) === idx).length
+              return (
+                <motion.div key={idx} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.08 * idx }}
+                  style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 14px', borderRadius: 10,
+                    background: opt.isReal ? 'rgba(30,107,60,0.12)' : 'var(--surface)',
+                    border: `1.5px solid ${opt.isReal ? 'rgba(82,183,136,0.45)' : 'var(--border)'}`,
+                  }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '0.88rem', fontWeight: opt.isReal ? 700 : 500, color: opt.isReal ? '#52b788' : undefined }}>
+                      {opt.isReal && '🐊 '}{opt.text}
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text3)', marginTop: 2 }}>
+                      {opt.isReal ? `Real answer · ${vc} correct vote${vc !== 1 ? 's' : ''}` : author ? `${author.name}'s bluff · ${vc} vote${vc !== 1 ? 's' : ''} = +${vc * 25}pts` : ''}
+                    </div>
+                  </div>
+                  {author && !opt.isReal && (
+                    <Avatar src={author.avatar} name={author.name} colorHex={author.colorHex} size={28} />
+                  )}
+                </motion.div>
+              )
+            })}
+            {/* Player score deltas */}
+            {Object.keys(scoreDeltas).length > 0 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                {Object.entries(scoreDeltas).map(([pid, delta], i) => {
+                  const p = game?.players?.[pid]
+                  if (!p) return null
+                  const isUnique = pid === uniqueKnowledge
+                  return (
+                    <motion.div key={pid} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.3 + i * 0.06 }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 20,
+                        background: delta > 0 ? 'rgba(87,204,153,0.1)' : delta < 0 ? 'rgba(230,57,70,0.08)' : 'var(--surface)',
+                        border: `1.5px solid ${delta > 0 ? 'rgba(87,204,153,0.4)' : delta < 0 ? 'rgba(230,57,70,0.3)' : 'var(--border)'}`,
+                      }}>
+                      <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={22} />
+                      <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>{p.name.split(' ')[0]}</span>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', fontWeight: 700, color: delta > 0 ? 'var(--green)' : delta < 0 ? 'var(--red)' : 'var(--text3)' }}>
+                        {delta > 0 ? '+' : ''}{delta}
+                      </span>
+                      {isUnique && <span title="Unique knowledge bonus">⭐</span>}
+                    </motion.div>
+                  )
+                })}
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        <ScoreBar players={players} game={game} />
+      </div>
     </div>
   )
 }
@@ -2167,9 +2389,28 @@ function TVBuzzCorner({ game, gameCode }) {
   const { speakWithChance } = useBuzzSpeech()
   const speaking = useBuzzSpeaking()
 
+  // Build game context for the 20% contextual TTS path.
+  function buildCtx() {
+    const sorted = Object.values(game?.players || {})
+      .filter(p => p.role !== 'gamescreen')
+      .sort((a, b) => (b.score || 0) - (a.score || 0))
+    return {
+      players: sorted,
+      leader: sorted[0],
+      lastPlace: sorted[sorted.length - 1],
+      scoreDiff: (sorted[0]?.score || 0) - (sorted[sorted.length - 1]?.score || 0),
+      round: game?.currentRound || 1,
+      totalRounds: game?.settings?.totalRounds || 3,
+      recentWrong: (game?.wrongAnswerers || []).map(id => game?.players?.[id]?.name).filter(Boolean),
+      genreName: game?.currentGenre?.name || '',
+      gameSpecific: game,
+    }
+  }
+
   // Speak a quip, optionally gated by probability (0–1). Returns true if spoken.
   function setQuipAndSpeak(q, evt = 'generic', chance = 1.0) {
-    const spoke = speakWithChance(q, evt, null, chance)
+    const genreId = game?.currentGenre?.id || null
+    const spoke = speakWithChance(q, evt, genreId, chance, buildCtx())
     if (spoke) { setQuip(q); setEvent(evt) }
     return spoke
   }
@@ -2241,6 +2482,16 @@ function TVBuzzCorner({ game, gameCode }) {
     }
   }, [game?.state, game?.currentQIndex, game?.currentRound])
 
+  // Read question aloud when a new question appears (uses TTS if no pre-recorded clip)
+  useEffect(() => {
+    if (game?.state !== 'quiz' || !game?.currentQ?.q) return
+    clearTimeout(idleTimer.current)
+    const q = game.currentQ.q
+    setQuip(q)
+    setEvent('question')
+    speakWithChance(q, 'question', game?.currentGenre?.id || null, 1.0, buildCtx())
+  }, [game?.currentQIndex])
+
   // Correct answer (15%)
   useEffect(() => {
     const isRevealed = !!game?.answerRevealed
@@ -2263,7 +2514,28 @@ function TVBuzzCorner({ game, gameCode }) {
     prevWrongCountRef.current = count
   }, [game?.wrongAnswerers?.length])
 
-  if (!aiHost) return null
+  // Out of the Question — phase transitions
+  const prevWhodPhaseRef = useRef(null)
+  useEffect(() => {
+    if (game?.currentGenre?.gameType !== 'whod') return
+    const phase = game?.whodPhase
+    if (phase === prevWhodPhaseRef.current) return
+    prevWhodPhaseRef.current = phase
+
+    clearTimeout(idleTimer.current)
+
+    if (phase === 'vote') {
+      setQuipAndSpeak(getBuzzQuip('whodVote'), 'whodVote', 1.0)
+    } else if (phase === 'results') {
+      const caught = game?.whodCaught
+      const event = caught ? 'whodCaught' : 'whodEscaped'
+      setQuipAndSpeak(getBuzzQuip(event), event, 1.0)
+    }
+
+    scheduleIdle()
+  }, [game?.whodPhase, game?.whodCaught])
+
+  if (!aiHost || game?.settings?.questionMaster) return null
 
   return (
     <div style={{
@@ -2459,6 +2731,7 @@ export default function GameScreen() {
     else if (gameType === 'hottake') stateLabel = `🔥 Statement ${(game.htPromptCount || 0) + 1}/${game.settings?.questionsPerRound || '?'}`
     else if (gameType === 'fill')    stateLabel = `✏️ Round ${game.fgPromptCount || 1}/${game.settings?.questionsPerRound || '?'}`
     else if (gameType === 'whod')       stateLabel = `🕵️ Case ${game.whodCount || 1}/${game.settings?.questionsPerRound || '?'}`
+    else if (gameType === 'croc')       stateLabel = `🐊 Q${(game.crocQIndex || 0) + 1}/${(game.crocQuestions || []).length || game.settings?.questionsPerRound || '?'} · ${game.crocPhase || 'submit'}`
     else if (gameType === 'truefalse')     stateLabel = `🤔 ${game.tfCount || 1}/${game.settings?.questionsPerRound || '?'}`
     else if (gameType === 'ordersup')      stateLabel = `🍔 Order ${game.ouCount || 1}/${game.settings?.questionsPerRound || '?'}`
     else if (gameType === 'fartdirection')  stateLabel = `💨 Colour ${game.fdCount || 1}/${game.settings?.questionsPerRound || '?'}`
@@ -2491,6 +2764,7 @@ export default function GameScreen() {
         case 'hottake': return <HotTakeView game={game} players={players} />
         case 'fill':       return <FillGapView game={game} players={players} />
         case 'whod':       return <WhodunnitView game={game} players={players} />
+        case 'croc':       return <CrocView game={game} players={players} />
         case 'truefalse':     return <TrueFalseView game={game} players={players} />
         case 'ordersup':      return <OrdersUpView game={game} players={players} />
         case 'fartdirection':  return <FartDirectionView game={game} players={players} />
