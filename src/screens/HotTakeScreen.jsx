@@ -60,7 +60,7 @@ export default function HotTakeScreen() {
 
   // Auto-reveal — use elapsed time from Firebase timestamp to avoid stale-zero fires on mount
   useEffect(() => {
-    if (phase !== 'vote' || !isController || autoRef.current || !game?.htStartAt) return
+    if (phase !== 'vote' || !isController || autoRef.current || !game?.htStartAt || game?.gamePaused) return
     const elapsed = Date.now() - game.htStartAt
     const expired = elapsed >= VOTE_TIME * 1000
     if (expired || (players.length > 0 && totalVoted >= players.length)) {

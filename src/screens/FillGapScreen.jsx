@@ -174,7 +174,7 @@ export default function FillGapScreen() {
 
   // Auto-advance: input phase done → voting
   useEffect(() => {
-    if (phase !== 'input' || !isController || autoRef.current || !game?.fgStartAt) return
+    if (phase !== 'input' || !isController || autoRef.current || !game?.fgStartAt || game?.gamePaused) return
     const elapsed = Date.now() - game.fgStartAt
     const timeExpired = elapsed >= INPUT_TIME * 1000
     if (timeExpired || (players.length > 0 && submittedCount >= players.length)) {
@@ -188,7 +188,7 @@ export default function FillGapScreen() {
 
   // Auto-advance: vote phase done → results
   useEffect(() => {
-    if (phase !== 'vote' || !isController || autoRef.current || !game?.fgVoteStartAt) return
+    if (phase !== 'vote' || !isController || autoRef.current || !game?.fgVoteStartAt || game?.gamePaused) return
     const elapsed = Date.now() - game.fgVoteStartAt
     const timeExpired = elapsed >= VOTE_TIME * 1000
     if (timeExpired || (players.length > 0 && votedCount >= players.length)) {

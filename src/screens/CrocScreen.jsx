@@ -47,7 +47,7 @@ export default function CrocScreen() {
   const revealIdx = game?.crocRevealIdx ?? -1
   const correctSubmitters = game?.crocCorrectSubmitters || {}
 
-  const allPlayers = Object.values(game?.players || {}).filter(p => p.role === 'player')
+  const allPlayers = Object.values(game?.players || {}).filter(p => p.role === 'player' || p.role === 'host')
   const me = game?.players?.[myId]
   const myColor = me?.colorHex || 'var(--accent)'
 
@@ -82,10 +82,10 @@ export default function CrocScreen() {
 
   // Auto-advance (no-QM mode, controller only)
   useEffect(() => {
-    if (!isController || isQM || autoRef.current) return
-    const submittedCount = Object.keys(bluffs).length
+    if (!isController || isQM || autoRef.current || game?.gamePaused) return
+    const totalSubmitted = Object.keys(bluffs).length + Object.keys(correctSubmitters).length
     const votedCount = Object.keys(votes).length
-    if (phase === 'submit' && submittedCount >= allPlayers.length && allPlayers.length > 0) {
+    if (phase === 'submit' && totalSubmitted >= allPlayers.length && allPlayers.length > 0) {
       autoRef.current = true
       setTimeout(() => {
         revealCrocOptions(gameCode, game).then(() => { autoRef.current = false })
@@ -97,7 +97,7 @@ export default function CrocScreen() {
         revealCrocResults(gameCode, game).then(() => { autoRef.current = false })
       }, 1200)
     }
-  }, [phase, bluffs, votes, allPlayers.length, isController, isQM])
+  }, [phase, bluffs, votes, correctSubmitters, allPlayers.length, isController, isQM])
 
   async function handleSubmitBluff() {
     if (!myBluff.trim() || bluffSubmitted) return
@@ -147,7 +147,7 @@ export default function CrocScreen() {
     setLoading(false)
   }
 
-  const submittedCount = Object.keys(bluffs).length
+  const submittedCount = Object.keys(bluffs).length + Object.keys(correctSubmitters).length
   const votedCount = Object.keys(votes).length
   const myDelta = scoreDeltas[myId]
   const iGotItRight = correctVoters.includes(myId)

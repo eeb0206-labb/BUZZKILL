@@ -460,7 +460,7 @@ export default function SpeedBriefsScreen() {
 
   // Auto-advance: input → reveal
   useEffect(() => {
-    if (phase !== 'input' || !isController || autoRef.current || !game?.sbStartAt) return
+    if (phase !== 'input' || !isController || autoRef.current || !game?.sbStartAt || game?.gamePaused) return
     const elapsed = Date.now() - game.sbStartAt
     const allIn = players.length > 0 && Object.keys(game.sbSubmissions || {}).length >= players.length
     if (elapsed >= SB_INPUT_TIME * 1000 || allIn) {
@@ -471,15 +471,18 @@ export default function SpeedBriefsScreen() {
 
   // Auto-advance: reveal — controller fires advanceSBReveal 5s after each sbRevealIdxAt
   useEffect(() => {
-    if (phase !== 'reveal' || !isController || !game?.sbRevealIdxAt) return
+    if (phase !== 'reveal' || !isController || !game?.sbRevealIdxAt || game?.gamePaused) return
     const elapsed = Date.now() - game.sbRevealIdxAt
-    const t = setTimeout(() => advanceSBReveal(gameCode, game), Math.max(200, SB_REVEAL_TIME * 1000 - elapsed))
+    const t = setTimeout(() => {
+      if (useStore.getState().game?.gamePaused) return
+      advanceSBReveal(gameCode, useStore.getState().game)
+    }, Math.max(200, SB_REVEAL_TIME * 1000 - elapsed))
     return () => clearTimeout(t)
   }, [phase, game?.sbRevealIdxAt, isController, gameCode])
 
   // Auto-advance: vote → results
   useEffect(() => {
-    if (phase !== 'vote' || !isController || autoRef.current || !game?.sbVoteStartAt) return
+    if (phase !== 'vote' || !isController || autoRef.current || !game?.sbVoteStartAt || game?.gamePaused) return
     const elapsed = Date.now() - game.sbVoteStartAt
     const allVoted = players.length > 0 && Object.keys(game.sbVotes || {}).length >= players.length
     if (elapsed >= SB_VOTE_TIME * 1000 || allVoted) {

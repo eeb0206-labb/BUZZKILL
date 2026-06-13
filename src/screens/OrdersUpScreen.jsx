@@ -67,7 +67,7 @@ export default function OrdersUpScreen() {
 
   // Auto-advance: memorize → order when actual elapsed time >= MEM_TIME
   useEffect(() => {
-    if (phase !== 'memorize' || !isController || autoRef.current || !game?.ouStartAt) return
+    if (phase !== 'memorize' || !isController || autoRef.current || !game?.ouStartAt || game?.gamePaused) return
     const elapsed = Date.now() - game.ouStartAt
     if (elapsed >= MEM_TIME * 1000) {
       autoRef.current = true
@@ -77,7 +77,7 @@ export default function OrdersUpScreen() {
 
   // Auto-reveal: order → reveal when actual elapsed time >= ORDER_TIME or all submitted
   useEffect(() => {
-    if (phase !== 'order' || !isController || autoRef.current || !game?.ouOrderStart) return
+    if (phase !== 'order' || !isController || autoRef.current || !game?.ouOrderStart || game?.gamePaused) return
     const elapsed = Date.now() - game.ouOrderStart
     const timeExpired = elapsed >= ORDER_TIME * 1000
     if (timeExpired || (players.length > 0 && totalDone >= players.length)) {
@@ -351,7 +351,7 @@ export default function OrdersUpScreen() {
                   const sub = submissions[p.id]
                   return (
                     <div key={p.id} className="row gap-8">
-                      <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={28} />
+                      <Avatar src={p.avatar} avatarConfig={p.avatarConfig} name={p.name} colorHex={p.colorHex} size={28} />
                       <div className="flex-1" style={{ fontWeight: 600, fontSize: '0.9rem' }}>{p.name}</div>
                       {sub ? (
                         <span style={{ fontSize: '0.78rem', color: 'var(--text3)' }}>

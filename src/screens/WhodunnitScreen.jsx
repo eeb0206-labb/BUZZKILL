@@ -20,7 +20,7 @@ import { useSound } from '../hooks/useSound'
 import SettingsOverlay from '../components/SettingsOverlay'
 
 const ANSWER_TIME = 45
-const VOTE_TIME   = 25
+const VOTE_TIME   = 60
 
 export default function WhodunnitScreen() {
   const store = useStore()
@@ -72,7 +72,7 @@ export default function WhodunnitScreen() {
 
   // Auto-advance — use elapsed time from Firebase timestamp to avoid stale-zero fires on mount
   useEffect(() => {
-    if (!isController || autoRef.current) return
+    if (!isController || autoRef.current || game?.gamePaused) return
     if (phase === 'answer' && game?.whodStartAt) {
       const elapsed = Date.now() - game.whodStartAt
       const expired = elapsed >= ANSWER_TIME * 1000

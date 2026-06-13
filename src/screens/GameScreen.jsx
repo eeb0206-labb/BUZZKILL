@@ -221,6 +221,23 @@ function QuizView({ game, players }) {
 }
 
 // ── MUSIC BANGERS VIEW ────────────────────────────────────────────────────────
+function _mbYouTubeEmbed(url) {
+  try {
+    const u = new URL(url)
+    let videoId = ''
+    let startTime = 0
+    if (u.hostname === 'youtu.be') {
+      videoId = u.pathname.slice(1)
+      startTime = parseInt(u.searchParams.get('t') || '0') || 0
+    } else {
+      videoId = u.searchParams.get('v') || ''
+      startTime = parseInt(u.searchParams.get('t') || '0') || 0
+    }
+    if (!videoId) return null
+    return `https://www.youtube.com/embed/${videoId}?start=${startTime}&rel=0&modestbranding=1&autoplay=1`
+  } catch { return null }
+}
+
 function MusicBangersView({ game, players }) {
   const currentQ     = game?.currentQ
   const buzzer       = game?.buzzer
@@ -228,6 +245,9 @@ function MusicBangersView({ game, players }) {
   const wrongList    = game?.wrongAnswerers || []
   const qIndex       = game?.currentQIndex || 0
   const totalQ       = game?.settings?.questionsPerRound || 8
+  const clipUrl      = currentQ?.clipUrl
+  const isYT         = !!(clipUrl && (clipUrl.includes('youtu.be') || clipUrl.includes('youtube.com')))
+  const embedUrl     = isYT ? _mbYouTubeEmbed(clipUrl) : null
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -242,8 +262,25 @@ function MusicBangersView({ game, players }) {
         </div>
         <motion.div key={qIndex} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: 'spring', stiffness: 280, damping: 26 }} style={{ textAlign: 'center' }}>
           <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(2rem, 5vw, 3.5rem)', color: '#f72585' }}>🎵 Name this tune!</div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1rem', color: 'var(--text3)', marginTop: 8 }}>Q{qIndex + 1} / {totalQ} — host is playing the clip</div>
+          {!embedUrl && (
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1rem', color: 'var(--text3)', marginTop: 8 }}>Q{qIndex + 1} / {totalQ} — host is playing the clip</div>
+          )}
         </motion.div>
+        {embedUrl && !game?.answerRevealed && (
+          <motion.div key={`yt-${qIndex}`} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+            style={{ borderRadius: 16, overflow: 'hidden', width: '100%', maxWidth: 560, aspectRatio: '16/9', boxShadow: '0 8px 40px rgba(247,37,133,0.3)', flexShrink: 0 }}>
+            <iframe
+              key={qIndex}
+              src={embedUrl}
+              width="100%"
+              height="100%"
+              style={{ border: 'none', display: 'block', width: '100%', height: '100%' }}
+              allow="autoplay; encrypted-media"
+              allowFullScreen
+              title="Music clip"
+            />
+          </motion.div>
+        )}
         <AnimatePresence>
           {game?.answerRevealed && currentQ && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
@@ -1308,7 +1345,7 @@ function OrdersUpView({ game, players }) {
                   <SpeechBubble items={buckets[pi] || []} color={p.colorHex} />
 
                   {/* Avatar */}
-                  <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={50} />
+                  <Avatar src={p.avatar} avatarConfig={p.avatarConfig} name={p.name} colorHex={p.colorHex} size={50} />
                   <span style={{ fontSize: '0.62rem', color: 'var(--text2)', fontWeight: 700, maxWidth: 60, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {p.name}
                   </span>
@@ -1376,7 +1413,7 @@ function OrdersUpView({ game, players }) {
                     border: `2px solid ${done ? 'rgba(87,204,153,0.4)' : 'rgba(249,115,22,0.2)'}`,
                     transition: 'all 0.3s',
                   }}>
-                  <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={42} />
+                  <Avatar src={p.avatar} avatarConfig={p.avatarConfig} name={p.name} colorHex={p.colorHex} size={42} />
                   <span style={{ fontWeight: 700, fontSize: '0.75rem' }}>{p.name}</span>
                   <span style={{ fontSize: '0.82rem' }}>{done ? '✅ Done' : '⏳…'}</span>
                 </motion.div>
@@ -1434,7 +1471,7 @@ function OrdersUpView({ game, players }) {
                     background: sm?.pts > 0 ? 'rgba(244,208,63,0.07)' : 'rgba(100,100,100,0.06)',
                     border: `1.5px solid ${p.colorHex}33`,
                   }}>
-                  <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={36} />
+                  <Avatar src={p.avatar} avatarConfig={p.avatarConfig} name={p.name} colorHex={p.colorHex} size={36} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {p.name}
@@ -2606,6 +2643,9 @@ export function TVBuzzCorner({ game, gameCode, hidden = false }) {
           winner: sorted[0]?.name,
           loser: sorted[sorted.length - 1]?.name,
         }), 'gameEnd', 1.0)
+        scheduleIdle()
+      } else if (state === 'game-intro') {
+        setQuipAndSpeak(getBuzzQuip('genreReveal'), 'genreReveal', 1.0)
         scheduleIdle()
       } else if (state === 'round-pick') {
         const q = getBuzzQuip('idle')

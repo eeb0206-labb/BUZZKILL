@@ -60,7 +60,7 @@ export default function JokeOffScreen() {
 
   // Auto-advance: when timer expires — use elapsed-time to avoid stale-zero fires on mount
   useEffect(() => {
-    if (!isController || autoStartRef.current || !game?.jokePromptStartAt) return
+    if (!isController || autoStartRef.current || !game?.jokePromptStartAt || game?.gamePaused) return
     const total = phase === 'vote' ? VOTE_TIME : SUBMIT_TIME
     const elapsed = (Date.now() - game.jokePromptStartAt) / 1000
     if (elapsed < total) return

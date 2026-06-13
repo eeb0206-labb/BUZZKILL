@@ -1284,7 +1284,7 @@ export function useGame() {
   }, [])
 
   const startWhodVoting = useCallback(async (code) => {
-    await update(ref(db, `games/${code}`), { whodPhase: 'vote' })
+    await update(ref(db, `games/${code}`), { whodPhase: 'vote', whodStartAt: Date.now() })
   }, [])
 
   const submitWhodVote = useCallback(async (code, voterId, targetId) => {
@@ -2049,7 +2049,22 @@ export function useGame() {
   }, [])
 
   const unpauseGame = useCallback(async (code) => {
-    await update(ref(db, `games/${code}`), { gamePaused: false, pauseRequests: {} })
+    const game = useStore.getState().game
+    const pausedAt = game?.pausedAt
+    const updates = { gamePaused: false, pauseRequests: {}, pausedAt: null }
+    if (pausedAt) {
+      const delta = Date.now() - pausedAt
+      const TIMER_FIELDS = [
+        'crocTimerEnds', 'whodStartAt', 'tfStartAt', 'ouStartAt', 'ouOrderStart',
+        'jokePromptStartAt', 'htStartAt', 'fgStartAt', 'fgVoteStartAt',
+        'fdShowStartAt', 'fdPickStartAt', 'mmuPhaseStartAt', 'sbStartAt',
+        'sbVoteStartAt', 'sbRevealIdxAt',
+      ]
+      for (const field of TIMER_FIELDS) {
+        if (game[field] != null) updates[field] = game[field] + delta
+      }
+    }
+    await update(ref(db, `games/${code}`), updates)
   }, [])
 
   // ── INTERIOR CROCODILE ARCHITECTURE ─────────────────────────────────────────

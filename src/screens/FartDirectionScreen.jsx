@@ -289,6 +289,7 @@ export default function FartDirectionScreen() {
   useEffect(() => {
     if (!isController || phase !== 'show') return
     showTimerRef.current = setTimeout(() => {
+      if (useStore.getState().game?.gamePaused) return
       setFartPlaying(true)
       playFartSound()
       setTimeout(() => setFartPlaying(false), 1200)
@@ -309,10 +310,11 @@ export default function FartDirectionScreen() {
 
   // ── Auto-reveal when all submitted or timer hits 0 ──────────────────────────
   useEffect(() => {
-    if (phase !== 'pick' || !isController || autoRef.current) return
+    if (phase !== 'pick' || !isController || autoRef.current || game?.gamePaused) return
     if (timeLeft === 0 || totalSubmitted >= players.length) {
       autoRef.current = true
-      setTimeout(() => revealFartResults(gameCode, game), 600)
+      // Read latest game from store at call time — avoids stale closure on the 600ms delay
+      setTimeout(() => revealFartResults(gameCode, useStore.getState().game), 600)
     }
   }, [timeLeft, totalSubmitted, players.length, phase, isController])
 

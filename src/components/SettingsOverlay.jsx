@@ -105,7 +105,7 @@ export default function SettingsOverlay({ show, onClose }) {
       // Auto-trigger pause if threshold met
       const newCount = pauseCount + 1
       if (newCount >= threshold && !gamePaused) {
-        await fbUpdate(fbRef(db, `games/${gameCode}`), { gamePaused: true })
+        await fbUpdate(fbRef(db, `games/${gameCode}`), { gamePaused: true, pausedAt: Date.now() })
       }
     }
   }
@@ -250,6 +250,12 @@ export default function SettingsOverlay({ show, onClose }) {
                     </motion.div>
                   ) : (
                     <motion.div key="btns" className="col gap-8" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                      <button
+                        className="btn btn-ghost btn-block"
+                        onClick={() => fbUpdate(fbRef(db, `games/${gameCode}`), { gamePaused: true, pausedAt: Date.now() })}
+                      >
+                        ⏸ Pause Game
+                      </button>
                       <button className="btn btn-ghost btn-block" onClick={handleReturnToLobby}>
                         🏠 Return to Lobby
                         <span style={{ fontSize: '0.72rem', color: 'var(--text3)', marginLeft: 6 }}>

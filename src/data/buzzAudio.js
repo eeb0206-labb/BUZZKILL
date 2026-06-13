@@ -146,6 +146,8 @@ function resolveCategory(event, genreId) {
     playerWinning: 'buzz-game/round-end',
     playerLosing:  'buzz-game/round-end',
     comebackTime:  'buzz-game/round-end',
+    musicNext:     'buzz-game/genre-reveal/music-bangers',
+    musicReveal:   'buzz-game/genre-reveal/music-bangers',
   }
   return MAP[event] || null
 }

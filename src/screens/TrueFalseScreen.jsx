@@ -54,7 +54,7 @@ export default function TrueFalseScreen() {
 
   // Auto-reveal when timer hits 0 or all answered
   useEffect(() => {
-    if (phase !== 'question' || !isController || autoRef.current) return
+    if (phase !== 'question' || !isController || autoRef.current || game?.gamePaused) return
     if (timeLeft === 0 || totalVoted >= players.length) {
       autoRef.current = true
       setTimeout(() => handleReveal(), 600)
