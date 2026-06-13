@@ -24,6 +24,11 @@ export default function SettingsOverlay({ show, onClose }) {
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [codeCopied, setCodeCopied] = useState(false)
 
+  // Pause request helpers
+  const myId = store.myId
+  const game = store.game
+  const gameCode = store.gameCode
+
   const joinUrl = typeof window !== 'undefined'
     ? `${window.location.origin}${window.location.pathname}?code=${gameCode}`
     : ''
@@ -84,10 +89,6 @@ export default function SettingsOverlay({ show, onClose }) {
     onClose()
   }
 
-  // Pause request helpers
-  const myId = store.myId
-  const game = store.game
-  const gameCode = store.gameCode
   const players = Object.values(game?.players || {}).filter(p => p.role !== 'gamescreen')
   const pauseRequests = game?.pauseRequests || {}
   const myPauseRequest = !!pauseRequests[myId]
