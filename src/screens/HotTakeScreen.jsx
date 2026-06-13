@@ -1,7 +1,7 @@
 /**
  * HotTakeScreen — Agree / Disagree voting round.
  * A spicy statement is shown. Everyone votes AGREE 🔥 or DISAGREE ❄️ simultaneously.
- * Points go to the majority. Bonus if unanimous.
+ * Rarer answer = more points (uniqueness scoring, max 150).
  * After voting, the split is revealed with a dramatic bar.
  *
  * Phases: vote → results → (next prompt / end round)
@@ -58,14 +58,16 @@ export default function HotTakeScreen() {
     return () => clearInterval(timerRef.current)
   }, [phase, game?.htStartAt])
 
-  // Auto-reveal when timer hits 0 or all voted
+  // Auto-reveal — use elapsed time from Firebase timestamp to avoid stale-zero fires on mount
   useEffect(() => {
-    if (phase !== 'vote' || !isController || autoRef.current) return
-    if (timeLeft === 0 || totalVoted >= players.length) {
+    if (phase !== 'vote' || !isController || autoRef.current || !game?.htStartAt) return
+    const elapsed = Date.now() - game.htStartAt
+    const expired = elapsed >= VOTE_TIME * 1000
+    if (expired || (players.length > 0 && totalVoted >= players.length)) {
       autoRef.current = true
       setTimeout(() => handleReveal(), 800)
     }
-  }, [timeLeft, totalVoted, players.length, phase, isController])
+  }, [timeLeft, totalVoted, players.length, phase, isController, game?.htStartAt])
 
   // Subscribe
   useEffect(() => {
@@ -244,23 +246,33 @@ export default function HotTakeScreen() {
               </div>
             </div>
 
-            {results && (
-              <motion.div
-                className="card center col gap-6"
-                style={{ background: results.isUnanimous ? 'rgba(244,208,63,0.08)' : 'var(--surface)' }}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 }}
-              >
-                <div style={{ fontWeight: 700 }}>
-                  {results.isUnanimous
-                    ? `🎯 Unanimous! +125 to everyone`
-                    : results.majority === 'agree'
-                      ? `🔥 Majority say AGREE (+75 each)`
-                      : `❄️ Majority say DISAGREE (+75 each)`}
-                </div>
-              </motion.div>
-            )}
+            {results && (() => {
+              const t = (results.agrees + results.disagrees) || 1
+              const agreePts = Math.round((results.disagrees / t) * 150)
+              const disagreePts = Math.round((results.agrees / t) * 150)
+              return (
+                <motion.div
+                  className="card center col gap-6"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.5 }}
+                >
+                  <div style={{ fontWeight: 700, textAlign: 'center' }}>
+                    🎯 Rarer opinion = more points
+                  </div>
+                  <div className="row gap-16" style={{ justifyContent: 'center' }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div>🔥 Agree</div>
+                      <div style={{ fontFamily: 'var(--font-mono)', color: '#e63946', fontWeight: 700 }}>+{agreePts}</div>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div>❄️ Disagree</div>
+                      <div style={{ fontFamily: 'var(--font-mono)', color: '#4895ef', fontWeight: 700 }}>+{disagreePts}</div>
+                    </div>
+                  </div>
+                </motion.div>
+              )
+            })()}
 
             {/* Who voted what */}
             <div className="card">

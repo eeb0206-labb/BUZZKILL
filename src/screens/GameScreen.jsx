@@ -272,34 +272,78 @@ function MusicBangersView({ game, players }) {
 
 // ── DRAW VIEW ─────────────────────────────────────────────────────────────────
 function DrawView({ game, players }) {
-  const rawPrompt = game?.currentQ
-  const prompt    = typeof rawPrompt === 'string' ? rawPrompt : rawPrompt?.q || '?'
-  const qIndex    = game?.currentQIndex || 0
-  const totalQ    = game?.settings?.questionsPerRound || 5
+  const qIndex      = game?.currentQIndex || 0
+  const totalQ      = game?.settings?.questionsPerRound || 5
+  const drawingData = game?.drawingData   // base64 JPEG updated ~300ms after each stroke
+  const drawerId    = game?.drawerId
+  const drawWinner  = game?.drawWinner
+  const drawPrompt  = game?.drawPrompt
+  const drawer      = players.find(p => p.id === drawerId)
+  const winner      = drawWinner ? (game?.players?.[drawWinner] || players.find(p => p.id === drawWinner)) : null
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '32px', gap: 24, overflow: 'hidden' }}>
+      {/* Header strip */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', borderBottom: '1px solid var(--border)' }}>
         <div style={{ fontFamily: 'var(--font-head)', fontSize: '1rem', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-          🎨 Round {qIndex + 1} / {totalQ}
+          🎨 Draw It — {qIndex + 1}/{totalQ}
         </div>
-        <motion.div key={qIndex} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-          style={{ background: 'var(--surface)', border: '2px solid var(--border)', borderRadius: 24, padding: '32px 48px', textAlign: 'center', maxWidth: 600 }}>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>Draw this:</div>
-          <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(1.6rem, 4vw, 3rem)', lineHeight: 1.25 }}>{prompt}</div>
-        </motion.div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text3)', fontSize: '0.88rem' }}>
-          <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1.6 }}>✏️</motion.span>
-          Players are drawing on their phones…
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
-          {players.map(p => (
-            <span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: 'var(--surface)', border: `1.5px solid ${p.colorHex}55`, fontSize: '0.82rem', fontWeight: 600 }}>
-              <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={20} />{p.name}
-            </span>
-          ))}
-        </div>
+        {drawer && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem', color: 'var(--text2)' }}>
+            <Avatar src={drawer.avatar} name={drawer.name} colorHex={drawer.colorHex} size={26} />
+            <span><strong style={{ color: 'var(--accent)' }}>{drawer.name}</strong> is drawing</span>
+          </div>
+        )}
       </div>
+
+      {/* Live canvas area */}
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#1a1a2e', margin: '12px 16px', borderRadius: 16, border: '2px solid var(--border)' }}>
+        <AnimatePresence mode="wait">
+          {drawingData ? (
+            <motion.img
+              key={drawingData.slice(-20)}
+              src={drawingData}
+              alt="live drawing"
+              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+              initial={{ opacity: 0.7 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.15 }}
+            />
+          ) : (
+            <motion.div
+              key="waiting"
+              style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+            >
+              <motion.div style={{ fontSize: '3rem' }} animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1.8 }}>✏️</motion.div>
+              <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: '1rem' }}>
+                {drawer ? `Waiting for ${drawer.name} to start…` : 'Setting up…'}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Winner overlay */}
+        <AnimatePresence>
+          {drawWinner && (
+            <motion.div
+              style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.72)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+            >
+              <div style={{ fontSize: '3.5rem' }}>🎉</div>
+              <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(1.8rem, 4vw, 3rem)', color: 'white' }}>
+                {winner?.name || 'Someone'} got it!
+              </div>
+              <div style={{ fontSize: '1.1rem', color: 'rgba(255,255,255,0.65)' }}>
+                It was: <strong style={{ color: 'var(--gold)', fontSize: '1.3rem' }}>{drawPrompt}</strong>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
       <ScoreBar players={players} game={game} />
     </div>
   )

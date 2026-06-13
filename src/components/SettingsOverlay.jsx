@@ -7,12 +7,12 @@
  *  - End game / Return to lobby (controller only)
  *  - Leave game (all non-controllers)
  */
-import React, { useState } from 'react'
+import React, { useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useStore } from '../store'
 import { useGame } from '../hooks/useGame'
 import { useSound } from '../hooks/useSound'
-import { db, ref as fbRef, update as fbUpdate } from '../firebase'
+import { db, ref as fbRef, update as fbUpdate, remove as fbRemove } from '../firebase'
 
 export default function SettingsOverlay({ show, onClose }) {
   const store = useStore()
@@ -22,6 +22,17 @@ export default function SettingsOverlay({ show, onClose }) {
 
   const [confirmEnd, setConfirmEnd] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
+  const [codeCopied, setCodeCopied] = useState(false)
+
+  const joinUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}${window.location.pathname}?code=${gameCode}`
+    : ''
+
+  const copyCode = useCallback(() => {
+    navigator.clipboard?.writeText(joinUrl).catch(() => {})
+    setCodeCopied(true)
+    setTimeout(() => setCodeCopied(false), 2000)
+  }, [joinUrl])
 
   const sfxVol    = store.sfxVolume
   const musicVol  = store.musicVolume
@@ -62,7 +73,11 @@ export default function SettingsOverlay({ show, onClose }) {
   }
 
   async function handleLeaveGame() {
-    store.setMyRole('player') // reset for next game
+    const myId = store.myId
+    if (gameCode && myId) {
+      try { await fbRemove(fbRef(db, `games/${gameCode}/players/${myId}`)) } catch (_) {}
+    }
+    store.setMyRole('player')
     store.setGame(null)
     store.setGameCode(null)
     store.setScreen('home')
@@ -127,6 +142,27 @@ export default function SettingsOverlay({ show, onClose }) {
             <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.3rem', textAlign: 'center' }}>
               ⚙️ Settings
             </div>
+
+            {/* ── Share code ─────────────────────────────────────────────────── */}
+            {gameCode && (
+              <div
+                onClick={copyCode}
+                style={{
+                  background: 'rgba(192,132,252,0.08)', border: '1.5px solid rgba(192,132,252,0.25)',
+                  borderRadius: 14, padding: '12px 16px', cursor: 'pointer', textAlign: 'center',
+                }}
+              >
+                <div style={{ fontSize: '0.65rem', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
+                  Join code — tap to copy link
+                </div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '2rem', fontWeight: 900, letterSpacing: '0.25em', color: 'var(--accent)' }}>
+                  {gameCode}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: codeCopied ? 'var(--green)' : 'var(--text3)', marginTop: 4 }}>
+                  {codeCopied ? '✓ Link copied!' : 'Share with anyone to join mid-game'}
+                </div>
+              </div>
+            )}
 
             {/* ── Sound Effects ──────────────────────────────────────────────── */}
             <div className="card" style={{ gap: 14 }}>

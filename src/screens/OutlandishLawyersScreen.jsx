@@ -250,6 +250,8 @@ export default function OutlandishLawyersScreen() {
     if (!gameCode) return
     return subscribeToGame(gameCode, (g) => {
       if (g.state === 'round-over') store.setScreen('round-over')
+      if (g.state === 'final')      store.setScreen('final')
+      if (g.state === 'lobby')      store.setScreen('lobby')
     })
   }, [gameCode])
 

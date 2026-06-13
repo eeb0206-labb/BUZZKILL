@@ -129,8 +129,8 @@ export function useBuzzSpeech() {
     stop()
 
     const settings = store.getSettings()
-    const apiKey = settings.elevenLabsApiKey?.trim()
-    const voiceId = (genreId && GENRE_VOICES[genreId]) || settings.buzzVoiceId?.trim()
+    const apiKey = settings.elevenLabsApiKey?.trim() || import.meta.env.VITE_ELEVENLABS_API_KEY
+    const voiceId = (genreId && GENRE_VOICES[genreId]) || settings.buzzVoiceId?.trim() || import.meta.env.VITE_BUZZ_VOICE_ID
     const canTTS = !!(apiKey && voiceId)
 
     // Dice roll: 20% chance of contextual TTS (only if TTS is available)

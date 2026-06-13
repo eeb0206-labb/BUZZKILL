@@ -408,6 +408,10 @@ export function useGame() {
     await update(ref(db, `games/${code}/players/${playerId}`), updates)
   }, [])
 
+  const kickPlayer = useCallback(async (code, playerId) => {
+    await remove(ref(db, `games/${code}/players/${playerId}`))
+  }, [])
+
   // Deal genres for round pick
   const dealGenres = useCallback(async (code, game) => {
     const excluded = game.settings?.excludedGenres || []
@@ -1163,21 +1167,25 @@ export function useGame() {
     const players = Object.values(game.players || {}).filter(p => p.role !== 'gamescreen')
     const agrees = Object.values(votes).filter(v => v === 'agree').length
     const disagrees = Object.values(votes).filter(v => v === 'disagree').length
+    const total = agrees + disagrees || 1
     const majority = agrees >= disagrees ? 'agree' : 'disagree'
-    // Points: 75 to everyone in majority. Bonus 50 if unanimous. Double if powerupRound active.
+    // Uniqueness scoring: the rarer your answer, the more points you earn.
+    // Each player earns Math.round((oppositeCount / total) * 150) pts.
+    // Abstainers get 0. Double if powerupRound active.
     const updates = {}
-    const isUnanimous = agrees === 0 || disagrees === 0
     players.forEach(p => {
-      if (votes[p.id] === majority) {
-        const base = 75 + (isUnanimous ? 50 : 0)
-        const pts = base * (game?.powerupRound?.[p.id] ? 2 : 1)
-        updates[`games/${code}/players/${p.id}/score`] = (p.score || 0) + pts
-        updates[`games/${code}/players/${p.id}/roundScore`] = (p.roundScore || 0) + pts
-      }
+      const myVote = votes[p.id]
+      if (!myVote) return
+      const oppositeCount = myVote === 'agree' ? disagrees : agrees
+      const base = Math.round((oppositeCount / total) * 150)
+      if (base <= 0) return
+      const pts = base * (game?.powerupRound?.[p.id] ? 2 : 1)
+      updates[`games/${code}/players/${p.id}/score`] = (p.score || 0) + pts
+      updates[`games/${code}/players/${p.id}/roundScore`] = (p.roundScore || 0) + pts
     })
     updates[`games/${code}/htPhase`] = 'results'
     await update(ref(db), updates)
-    return { majority, agrees, disagrees, isUnanimous }
+    return { majority, agrees, disagrees }
   }, [])
 
   const nextHotTakePrompt = useCallback(async (code, game) => {
@@ -2100,7 +2108,7 @@ export function useGame() {
   }, [])
 
   return {
-    createGame, joinGame, subscribeToGame, updateGame, updatePlayer,
+    createGame, joinGame, subscribeToGame, updateGame, updatePlayer, kickPlayer,
     dealGenres, voteForGenre, selectGenre,
     buzzIn, clearBuzzer, markAnswer, nextQuestion, loadFirstQuestion,
     startNextRound, startGame,

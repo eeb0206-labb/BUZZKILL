@@ -171,7 +171,10 @@ export default function QuizHostScreen() {
   // ── Question display timer: auto-advance if no one buzzes in time ────────────
   useEffect(() => {
     if (questionTimerRef.current) clearInterval(questionTimerRef.current)
-    const questionTime = settings.timers?.quizQuestion
+    const isBlitz = game?.currentGenre?.gameType === 'blitz'
+    const questionTime = isBlitz
+      ? (settings.timers?.blitzPerQ || 8)
+      : settings.timers?.quizQuestion
     if (!currentQ || !questionTime || game?.buzzer || !isController) {
       setQuestionTimer(0)
       return
@@ -323,20 +326,25 @@ export default function QuizHostScreen() {
         </div>
 
         {/* ── Question timer countdown (time to buzz) ──────────────────────── */}
-        {questionTimer > 0 && settings.timers?.quizQuestion > 0 && !game?.buzzer && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ flex: 1, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
-              <motion.div
-                style={{ height: '100%', background: questionTimer < 10 ? 'var(--red)' : 'var(--accent)', borderRadius: 2 }}
-                animate={{ width: `${(questionTimer / settings.timers.quizQuestion) * 100}%` }}
-                transition={{ duration: 0.8, ease: 'linear' }}
-              />
+        {questionTimer > 0 && !game?.buzzer && (() => {
+          const isBlitz = game?.currentGenre?.gameType === 'blitz'
+          const qTotal = isBlitz ? (settings.timers?.blitzPerQ || 8) : (settings.timers?.quizQuestion || 0)
+          if (!qTotal) return null
+          return (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ flex: 1, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                <motion.div
+                  style={{ height: '100%', background: questionTimer < 10 ? 'var(--red)' : 'var(--accent)', borderRadius: 2 }}
+                  animate={{ width: `${(questionTimer / qTotal) * 100}%` }}
+                  transition={{ duration: 0.8, ease: 'linear' }}
+                />
+              </div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: questionTimer < 10 ? 'var(--red)' : 'var(--text3)', minWidth: 28, textAlign: 'right', fontWeight: 700 }}>
+                {questionTimer}s
+              </div>
             </div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: questionTimer < 10 ? 'var(--red)' : 'var(--text3)', minWidth: 28, textAlign: 'right', fontWeight: 700 }}>
-              {questionTimer}s
-            </div>
-          </div>
-        )}
+          )
+        })()}
 
         {/* ── Question card ────────────────────────────────────────────────── */}
         {currentQ && (

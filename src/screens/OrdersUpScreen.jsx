@@ -112,6 +112,21 @@ export default function OrdersUpScreen() {
     autoRef.current = false
   }, [challenge.join(',')])
 
+  // Auto-advance: reveal → next order (8s)
+  useEffect(() => {
+    if (phase !== 'reveal' || !isController) return
+    const t = setTimeout(() => {
+      const current = game?.ouCount || 1
+      const limit = game?.settings?.questionsPerRound || 5
+      if (current >= limit) {
+        endOURound(gameCode)
+      } else {
+        nextOUOrder(gameCode, game)
+      }
+    }, 8000)
+    return () => clearTimeout(t)
+  }, [phase, isController, gameCode])
+
   // Play sound on reveal
   useEffect(() => {
     if (phase !== 'reveal') return

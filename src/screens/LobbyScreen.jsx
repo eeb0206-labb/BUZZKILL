@@ -49,33 +49,6 @@ const ROLE_OPTIONS = [
 ]
 
 // ── powerup info ─────────────────────────────────────────────────────────────────
-const POWERUPS = [
-  {
-    icon: '🔍', name: 'Sneak Peek',
-    desc: 'Reveals the first letter(s) of the answer — gives you a head start before buzzing in.',
-  },
-  {
-    icon: '🤑', name: 'Steal',
-    desc: 'Grab any power-up from another player\'s stash. They lose it, you gain it.',
-  },
-  {
-    icon: '😈', name: 'Imposter',
-    desc: 'Force another player\'s buzzer to fire — they must answer the question. If they get it wrong: you gain +50, they lose 25. If they get it right: they get their 100 points and you get nothing.',
-  },
-  {
-    icon: '📋', name: 'Plagiarism',
-    desc: 'Latch onto one player for the next 4 questions. Every time they get a correct answer, you automatically earn the same points.',
-  },
-  {
-    icon: '🚫', name: 'Block',
-    desc: 'Silence a chosen player. The next time they try to buzz in, nothing happens — their buzz is swallowed.',
-  },
-  {
-    icon: '✖️', name: 'Double Points',
-    desc: 'Activate before a round starts. All your correct answers score 2× points for the entire round.',
-  },
-]
-
 // ── inside joke form ─────────────────────────────────────────────────────────────
 function InsideJokeForm({ gameCode, myId, onAdded }) {
   const [form, setForm]       = useState({ label: '', category: 'incident', context: '' })
@@ -297,7 +270,7 @@ function ProfileModalContent({ profileMode, setProfileMode, profileName, setProf
 }
 
 // ── player card (host view) ──────────────────────────────────────────────────────
-function PlayerCard({ player, isMe, hostId, tvId, onRoleChange, onTransferHost }) {
+function PlayerCard({ player, isMe, hostId, tvId, onRoleChange, onTransferHost, onKick }) {
   const isCurrentHost = player.id === hostId
   const isTV = player.id === tvId
   // Derive effective display role: TV assignment takes priority, host is treated as 'player' otherwise
@@ -334,17 +307,32 @@ function PlayerCard({ player, isMe, hostId, tvId, onRoleChange, onTransferHost }
           )
         })}
       </div>
-      {/* Transfer host button — only on other players' cards (not yourself, not already host) */}
-      {!isMe && !isCurrentHost && onTransferHost && (
-        <motion.button
-          className="btn btn-ghost btn-sm"
-          style={{ fontSize: '0.72rem', color: 'var(--gold)', borderColor: 'rgba(244,208,63,0.3)', padding: '2px 8px' }}
-          whileTap={{ scale: 0.9 }}
-          onClick={() => onTransferHost(player.id)}
-          title="Give this player host controls"
-        >
-          👑 Make Host
-        </motion.button>
+      {/* Transfer host + kick buttons — only on other players' cards */}
+      {!isMe && !isCurrentHost && (
+        <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
+          {onTransferHost && (
+            <motion.button
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: '0.72rem', color: 'var(--gold)', borderColor: 'rgba(244,208,63,0.3)', padding: '2px 8px' }}
+              whileTap={{ scale: 0.9 }}
+              onClick={() => onTransferHost(player.id)}
+              title="Give this player host controls"
+            >
+              👑 Make Host
+            </motion.button>
+          )}
+          {onKick && (
+            <motion.button
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: '0.72rem', color: 'var(--red)', borderColor: 'rgba(220,50,50,0.3)', padding: '2px 8px' }}
+              whileTap={{ scale: 0.9 }}
+              onClick={() => onKick(player.id)}
+              title="Remove this player from the lobby"
+            >
+              ✕ Kick
+            </motion.button>
+          )}
+        </div>
       )}
     </motion.div>
   )
@@ -383,7 +371,6 @@ function RulesSheet({ isQM, aiHost, hasScreen }) {
         {[
           ['🗳️', 'Vote', 'Everyone votes on a genre from 3 random options. Most votes wins.'],
           ['❓', 'Questions', 'Questions appear. First to buzz in must answer. +100 correct, −25 wrong. If someone already got it wrong and you get it right, you earn a +50 bonus on top.'],
-          ['⚡', 'Powerups', 'Use your powerups strategically — before buzzing or between rounds.'],
           ['🏆', 'Scores', 'Leaderboard shown at the end of each round.'],
         ].map(([icon, label, text]) => (
           <div key={label} className="row gap-10" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)', alignItems: 'flex-start' }}>
@@ -396,19 +383,6 @@ function RulesSheet({ isQM, aiHost, hasScreen }) {
         ))}
       </div>
 
-      {/* Powerups */}
-      <div>
-        <div style={{ fontSize: '0.72rem', color: 'var(--text3)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>Your Powerups</div>
-        {POWERUPS.map(p => (
-          <div key={p.name} className="row gap-10" style={{ padding: '9px 0', borderBottom: '1px solid var(--border)', alignItems: 'flex-start' }}>
-            <div style={{ fontSize: '1.4rem', flexShrink: 0, width: 28, textAlign: 'center' }}>{p.icon}</div>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: 2 }}>{p.name}</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text2)', lineHeight: 1.5 }}>{p.desc}</div>
-            </div>
-          </div>
-        ))}
-      </div>
     </div>
   )
 }
@@ -511,7 +485,6 @@ function SettingsForm({ localSettings, setS, setTimer, setPowerup, toggleGenreEx
   const SETTINGS_TABS = [
     { id: 'game', label: '🎮 Game' },
     { id: 'timers', label: '⏱ Timers' },
-    { id: 'powerups', label: '⚡ Power' },
     { id: 'genres', label: '🎯 Genres' },
   ]
 
@@ -667,25 +640,6 @@ function SettingsForm({ localSettings, setS, setTimer, setPowerup, toggleGenreEx
         </motion.div>
       )}
 
-      {settingsTab === 'powerups' && localSettings.powerupCounts && (
-        <motion.div className="card col gap-12" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <div style={{ fontWeight: 700 }}>⚡ Powerup Counts</div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text2)' }}>Set to 0 to disable.</div>
-          {[
-            { key: 'sneakPeek', label: '🔍 Sneak Peek' }, { key: 'steal', label: '🤑 Steal' },
-            { key: 'imposter', label: '😈 Imposter' }, { key: 'plagiarism', label: '📋 Plagiarism' },
-            { key: 'block', label: '🚫 Block' }, { key: 'doublePoints', label: '✖️ Double Points' },
-          ].map(p => (
-            <div key={p.key} className="row gap-12" style={{ alignItems: 'center' }}>
-              <div className="flex-1" style={{ fontWeight: 600, fontSize: '0.9rem' }}>{p.label}</div>
-              <input type="number" className="input" style={{ width: 64, textAlign: 'center', padding: '8px' }}
-                min={0} max={5} value={localSettings.powerupCounts[p.key]}
-                onChange={e => setPowerup(p.key, e.target.value)} />
-            </div>
-          ))}
-        </motion.div>
-      )}
-
       {settingsTab === 'genres' && (
         <motion.div className="col gap-8" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           {/* Mode toggle */}
@@ -759,12 +713,13 @@ export default function LobbyScreen() {
   const isController = store.isController()
   // Show host controls if you're the controller OR you're the Firebase host (even set as TV screen)
   const showHostView = isController || isHost
-  const { subscribeToGame, startGame, updateGame, updatePlayer, transferHost } = useGame()
+  const { subscribeToGame, startGame, updateGame, updatePlayer, transferHost, kickPlayer } = useGame()
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState('game')
   const [localSettings, setLocalSettings] = useState(null)
   const [settingsSaving, setSettingsSaving] = useState(false)
+  const autoSaveTimerRef = useRef(null)
   const [showQMInfo, setShowQMInfo] = useState(false)
   const [qrFullscreen, setQrFullscreen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -828,14 +783,6 @@ export default function LobbyScreen() {
     return () => clearTimeout(t)
   }, [shouldSpeak, aiHost, isReturnLobby])
 
-  // Return visits only: idle lobby banter every ~60s
-  useEffect(() => {
-    if (!shouldSpeak || !aiHost || !isReturnLobby) return
-    const id = setInterval(() => {
-      speakWithChance(getBuzzQuip('lobbyWaiting'), 'lobbyWaiting', null, 1.0)
-    }, 60 * 1000)
-    return () => clearInterval(id)
-  }, [shouldSpeak, aiHost, isReturnLobby])
 
   // Player joins — 10% chance per new arrival
   useEffect(() => {
@@ -894,9 +841,29 @@ export default function LobbyScreen() {
     if (!localSettings) return
     setSettingsSaving(true)
     await updateGame(gameCode, { settings: localSettings })
-    setSettingsSaving(false); setSettingsOpen(false)
+    setSettingsSaving(false)
     store.setToast({ message: 'Settings saved ✓', icon: '⚙️' })
   }
+
+  // Auto-save settings 1s after any change (while panel is open)
+  useEffect(() => {
+    if (!localSettings || !settingsOpen) return
+    clearTimeout(autoSaveTimerRef.current)
+    autoSaveTimerRef.current = setTimeout(() => {
+      updateGame(gameCode, { settings: localSettings })
+    }, 1000)
+    return () => clearTimeout(autoSaveTimerRef.current)
+  }, [localSettings, settingsOpen])
+
+  // Flush settings immediately when the panel closes (debounce gets cancelled on close)
+  const prevSettingsOpen = useRef(false)
+  useEffect(() => {
+    if (prevSettingsOpen.current && !settingsOpen && localSettings) {
+      clearTimeout(autoSaveTimerRef.current)
+      updateGame(gameCode, { settings: localSettings })
+    }
+    prevSettingsOpen.current = settingsOpen
+  }, [settingsOpen])
 
   function openProfile() {
     const me = game?.players?.[myId]
@@ -1066,6 +1033,7 @@ export default function LobbyScreen() {
                     tvId={game?.screens?.tv}
                     onRoleChange={changePlayerRole}
                     onTransferHost={handleTransferHost}
+                    onKick={p.id !== myId ? (id) => kickPlayer(gameCode, id) : undefined}
                   />
                 ))}
               </AnimatePresence>
@@ -1102,10 +1070,9 @@ export default function LobbyScreen() {
                 setShowQMInfo={setShowQMInfo}
                 {...settingsHelpers}
               />
-              <button className="btn btn-primary btn-block" onClick={saveSettings} disabled={settingsSaving}
-                style={{ marginTop: 8 }}>
-                {settingsSaving ? 'Saving...' : 'Save Settings ✓'}
-              </button>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text3)', textAlign: 'center', marginTop: 4 }}>
+                {settingsSaving ? 'Saving…' : 'Changes save automatically'}
+              </div>
             </div>
           )}
         </Modal>
@@ -1150,7 +1117,7 @@ export default function LobbyScreen() {
               event={isReturnLobby ? 'lobbyWaiting' : 'buzzIntro'}
               visible
               autoIdle={isReturnLobby}
-              idleInterval={60000}
+              idleInterval={3 * 60 * 1000}
               speakOnChange={shouldSpeak && isReturnLobby}
               speaking={buzzSpeaking}
             />

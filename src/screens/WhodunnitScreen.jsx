@@ -36,9 +36,10 @@ export default function WhodunnitScreen() {
   const [submitted, setSubmitted] = useState(false)
   const [timeLeft, setTimeLeft] = useState(0)
   const [showSettings, setShowSettings] = useState(false)
-  const [result, setResult] = useState(null) // true = caught, false = escaped
   const timerRef = useRef(null)
   const autoRef = useRef(false)
+  // Read result from Firebase so every device sees the same outcome
+  const result = game?.whodCaught ?? null
 
   const phase = game?.whodPhase
   const imposterId = game?.whodImposterId
@@ -69,18 +70,26 @@ export default function WhodunnitScreen() {
     return () => clearInterval(timerRef.current)
   }, [phase, game?.whodStartAt])
 
-  // Auto-advance
+  // Auto-advance — use elapsed time from Firebase timestamp to avoid stale-zero fires on mount
   useEffect(() => {
     if (!isController || autoRef.current) return
-    if (phase === 'answer' && (timeLeft === 0 || answeredCount >= players.length)) {
-      autoRef.current = true
-      setTimeout(() => startWhodVoting(gameCode).then(() => { autoRef.current = false }), 800)
+    if (phase === 'answer' && game?.whodStartAt) {
+      const elapsed = Date.now() - game.whodStartAt
+      const expired = elapsed >= ANSWER_TIME * 1000
+      if (expired || (players.length > 0 && answeredCount >= players.length)) {
+        autoRef.current = true
+        setTimeout(() => startWhodVoting(gameCode).then(() => { autoRef.current = false }), 800)
+      }
     }
-    if (phase === 'vote' && (timeLeft === 0 || votedCount >= players.length)) {
-      autoRef.current = true
-      setTimeout(() => handleReveal(), 600)
+    if (phase === 'vote' && game?.whodStartAt) {
+      const elapsed = Date.now() - game.whodStartAt
+      const expired = elapsed >= VOTE_TIME * 1000
+      if (expired || (players.length > 0 && votedCount >= players.length)) {
+        autoRef.current = true
+        setTimeout(() => handleReveal(), 600)
+      }
     }
-  }, [timeLeft, answeredCount, votedCount, phase, isController])
+  }, [timeLeft, answeredCount, votedCount, phase, isController, game?.whodStartAt])
 
   // Subscribe
   useEffect(() => {
@@ -122,7 +131,6 @@ export default function WhodunnitScreen() {
 
   async function handleReveal() {
     const caught = await revealWhodResults(gameCode, game)
-    setResult(caught)
     if (caught) playCorrect()
     else playWrong()
     autoRef.current = false
@@ -271,7 +279,7 @@ export default function WhodunnitScreen() {
         )}
 
         {/* ── RESULTS phase ─────────────────────────────────────────────────── */}
-        {phase === 'results' && (
+        {phase === 'results' && result !== null && (
           <motion.div className="col gap-12" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
 
             {/* Big reveal */}

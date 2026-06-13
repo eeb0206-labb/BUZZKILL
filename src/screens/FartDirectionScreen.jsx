@@ -206,6 +206,37 @@ const RANK_MEDALS = ['🥇', '🥈', '🥉']
 const RANK_COLORS = ['#f4d03f', '#c0c0c0', '#cd7f32']
 const PICK_TIME = 20  // seconds for pick phase
 const SHOW_TIME = 4000  // ms for show phase
+const REVEAL_DURATION = 7000  // ms before auto-advancing from reveal
+
+function playFartSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    const duration = 0.9
+    const rate = ctx.sampleRate
+    const buf = ctx.createBuffer(1, rate * duration, rate)
+    const data = buf.getChannelData(0)
+    let phase = 0
+    const baseFreq = 80 + Math.random() * 40
+    for (let i = 0; i < data.length; i++) {
+      const t = i / rate
+      const decay = Math.pow(1 - t / duration, 1.2)
+      const wobble = Math.sin(2 * Math.PI * baseFreq * t * (1 + 0.8 * t))
+      const noise = (Math.random() * 2 - 1)
+      data[i] = (wobble * 0.6 + noise * 0.4) * decay
+    }
+    const src = ctx.createBufferSource()
+    src.buffer = buf
+    const gain = ctx.createGain()
+    gain.gain.setValueAtTime(0.9, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
+    const filter = ctx.createBiquadFilter()
+    filter.type = 'lowpass'
+    filter.frequency.setValueAtTime(600, ctx.currentTime)
+    filter.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + duration)
+    src.connect(filter); filter.connect(gain); gain.connect(ctx.destination)
+    src.start(); src.stop(ctx.currentTime + duration)
+  } catch (_) {}
+}
 
 // ── Main Screen ────────────────────────────────────────────────────────────────
 
@@ -259,6 +290,7 @@ export default function FartDirectionScreen() {
     if (!isController || phase !== 'show') return
     showTimerRef.current = setTimeout(() => {
       setFartPlaying(true)
+      playFartSound()
       setTimeout(() => setFartPlaying(false), 1200)
       advanceFDToPick(gameCode)
     }, SHOW_TIME)
@@ -286,6 +318,21 @@ export default function FartDirectionScreen() {
 
   // ── Reset autoRef on new colour ──────────────────────────────────────────────
   useEffect(() => { autoRef.current = false }, [targetColor])
+
+  // ── Auto-advance reveal → next colour or end round ───────────────────────────
+  useEffect(() => {
+    if (phase !== 'reveal' || !isController) return
+    const t = setTimeout(async () => {
+      const currentCount = game?.fdCount || 1
+      const limit = game?.settings?.questionsPerRound || 5
+      if (currentCount >= limit) {
+        await endFDRound(gameCode)
+      } else {
+        await nextFartColor(gameCode, game)
+      }
+    }, REVEAL_DURATION)
+    return () => clearTimeout(t)
+  }, [phase, isController, gameCode])
 
   // ── Reset selected colour on each new pick phase ─────────────────────────────
   useEffect(() => {

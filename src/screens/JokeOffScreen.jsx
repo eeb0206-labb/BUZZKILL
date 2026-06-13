@@ -58,9 +58,12 @@ export default function JokeOffScreen() {
     return () => clearInterval(timerRef.current)
   }, [phase, game?.jokePromptStartAt])
 
-  // Auto-advance: when timer hits 0
+  // Auto-advance: when timer expires — use elapsed-time to avoid stale-zero fires on mount
   useEffect(() => {
-    if (timeLeft > 0 || !isController || autoStartRef.current) return
+    if (!isController || autoStartRef.current || !game?.jokePromptStartAt) return
+    const total = phase === 'vote' ? VOTE_TIME : SUBMIT_TIME
+    const elapsed = (Date.now() - game.jokePromptStartAt) / 1000
+    if (elapsed < total) return
     if (phase === 'submit') {
       autoStartRef.current = true
       startJokeVoting(gameCode).then(() => { autoStartRef.current = false })
@@ -68,7 +71,7 @@ export default function JokeOffScreen() {
       autoStartRef.current = true
       handleRevealResults()
     }
-  }, [timeLeft, phase, isController, gameCode])
+  }, [timeLeft, phase, isController, game?.jokePromptStartAt])
 
   // Auto-advance: everyone submitted
   useEffect(() => {

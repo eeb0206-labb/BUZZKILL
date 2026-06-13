@@ -78,7 +78,7 @@ function BriefBadge({ brief, compact }) {
     }}>
       <div style={{ fontSize: compact ? '1.5rem' : '2rem' }}>{brief.emoji}</div>
       <div>
-        <div style={{ fontWeight: 700, fontSize: compact ? '0.8rem' : '0.95rem', color: brief.color }}>{brief.name}</div>
+        <div style={{ fontWeight: 700, fontSize: compact ? '0.85rem' : '1rem', color: 'var(--text1)' }}>{brief.name}</div>
         <div style={{ fontSize: '0.68rem', color: 'var(--text3)' }}>Write a tagline to sell these</div>
       </div>
     </div>
@@ -487,6 +487,21 @@ export default function SpeedBriefsScreen() {
       setTimeout(async () => { await revealSBResults(gameCode, game); autoRef.current = false }, 600)
     }
   }, [timeLeft, phase, isController, game?.sbVoteStartAt])
+
+  // Auto-advance: results → next brief or end round (8s)
+  useEffect(() => {
+    if (phase !== 'results' || !isController) return
+    const t = setTimeout(async () => {
+      const currentRound = game?.sbRound || 1
+      const limit = game?.settings?.questionsPerRound || 5
+      if (currentRound < limit) {
+        await nextSBRound(gameCode, game)
+      } else {
+        await endSBRound(gameCode)
+      }
+    }, 8000)
+    return () => clearTimeout(t)
+  }, [phase, isController])
 
   const genre = game?.currentGenre
   const timerColor = phase === 'vote' ? '#f72585' : 'var(--accent)'

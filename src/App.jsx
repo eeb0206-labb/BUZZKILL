@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useStore } from './store'
 import { Toast } from './components/ui'
@@ -163,6 +163,13 @@ export default function App() {
   const gamePaused = useStore(s => s.game?.gamePaused)
   const isController = useStore(s => s.isController())
   const gameCode = useStore(s => s.gameCode)
+  const setScreen = useStore(s => s.setScreen)
+
+  // Auto-redirect to join screen when ?code= is in the URL (e.g. from QR scan)
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('code')
+    if (code && !gameCode) setScreen('join')
+  }, [])
 
   function getScreenComponent() {
     // gamescreen role (the big TV) always shows GameScreen once the game is in progress.

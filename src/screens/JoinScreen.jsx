@@ -12,21 +12,17 @@ export default function JoinScreen() {
   const setToast = store.setToast
   const { joinGame } = useGame()
 
-  const [step, setStep] = useState('code')   // 'code' | 'name' | 'avatar'
-  const [code, setCode] = useState('')
+  // Pre-fill code from URL ?code= param, skip code step if present
+  const urlCode = new URLSearchParams(window.location.search).get('code')?.toUpperCase() || ''
+  const [step, setStep] = useState(urlCode ? 'name' : 'code')
+  const [code, setCode] = useState(urlCode)
   const [name, setName] = useState(store.myName || '')
   // Pre-populate avatarConfig from store if available, else random
   const [avatarConfig, setAvatarConfig] = useState(
     () => store.myAvatarConfig || randomAvatarConfig()
   )
+  const [photoSrc, setPhotoSrc] = useState(null)
   const [loading, setLoading] = useState(false)
-
-  // Pre-fill code from URL ?code= param
-  React.useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const c = params.get('code')
-    if (c) setCode(c.toUpperCase())
-  }, [])
 
   const handleCode = () => {
     if (!code.trim() || code.length < 4) {
@@ -48,7 +44,7 @@ export default function JoinScreen() {
     if (loading) return
     setLoading(true)
     try {
-      await joinGame(code.toUpperCase(), name.trim(), null, 'player', avatarConfig)
+      await joinGame(code.toUpperCase(), name.trim(), photoSrc, 'player', avatarConfig)
       store.setMyAvatarConfig(avatarConfig)
       setScreen('lobby')
     } catch (e) {
@@ -159,7 +155,7 @@ export default function JoinScreen() {
                 <p className="muted" style={{ fontSize: '0.85rem', textAlign: 'center' }}>Customise your avatar — or just go random!</p>
               </div>
 
-              <AvatarCreator config={avatarConfig} onChange={setAvatarConfig} />
+              <AvatarCreator config={avatarConfig} onChange={setAvatarConfig} photoSrc={photoSrc} onPhotoChange={setPhotoSrc} />
 
               <motion.button
                 className="btn btn-primary btn-lg btn-block"

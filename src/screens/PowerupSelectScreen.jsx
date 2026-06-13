@@ -64,8 +64,11 @@ export default function PowerupSelectScreen() {
     setConfirmed(true)
     const gameType = genre?.gameType
     if (gameType === 'lawyers') {
-      // Outlandish Lawyers — pick 2 players + statement, set state to 'lawyers'
-      await startLawyers(gameCode, game)
+      const ok = await startLawyers(gameCode, game)
+      if (!ok) {
+        setConfirmed(false)
+        store.setToast({ message: 'Need at least 3 players for Outlandish Lawyers', icon: '⚖️' })
+      }
     } else {
       await update(ref(db, `games/${gameCode}`), { state: 'quiz', currentQIndex: 0, currentQ: null })
     }
@@ -73,6 +76,9 @@ export default function PowerupSelectScreen() {
 
   const genre = game?.currentGenre
   const allPlayers = Object.values(game?.players || {}).filter(p => p.role === 'player')
+  const allParticipants = Object.values(game?.players || {}).filter(p => p.role !== 'gamescreen')
+  const isLawyers = genre?.gameType === 'lawyers'
+  const notEnoughForLawyers = isLawyers && allParticipants.length < 3
   const activatedPlayers = Object.entries(game?.powerupRound || {})
     .filter(([, v]) => v)
     .map(([id]) => game?.players?.[id])
@@ -237,13 +243,29 @@ export default function PowerupSelectScreen() {
           </motion.div>
         )}
 
+        {/* Not-enough-players warning for Lawyers */}
+        {isController && notEnoughForLawyers && (
+          <motion.div
+            className="card"
+            style={{ background: 'rgba(192,132,252,0.06)', borderColor: 'rgba(192,132,252,0.3)', textAlign: 'center', gap: 6 }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          >
+            <div style={{ fontSize: '1.4rem' }}>⚖️</div>
+            <div style={{ fontWeight: 700, color: '#c084fc' }}>Need at least 3 players</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text2)' }}>
+              Outlandish Lawyers needs 2 debaters + 1 juror.<br />
+              Currently {allParticipants.length} player{allParticipants.length === 1 ? '' : 's'} connected.
+            </div>
+          </motion.div>
+        )}
+
         {/* Start button for controller */}
         {isController && (
           <motion.button
             className="btn btn-green btn-lg btn-block"
-            whileTap={{ scale: 0.97 }}
+            whileTap={notEnoughForLawyers ? {} : { scale: 0.97 }}
             onClick={handleStart}
-            disabled={confirmed}
+            disabled={confirmed || notEnoughForLawyers}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.4 }}
