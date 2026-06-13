@@ -171,10 +171,10 @@ export default function QuizHostScreen() {
   // ── Question display timer: auto-advance if no one buzzes in time ────────────
   useEffect(() => {
     if (questionTimerRef.current) clearInterval(questionTimerRef.current)
-    const isBlitz = game?.currentGenre?.gameType === 'blitz'
-    const questionTime = isBlitz
-      ? (settings.timers?.blitzPerQ || 8)
-      : settings.timers?.quizQuestion
+    const gameType = game?.currentGenre?.gameType
+    const isBlitz = gameType === 'blitz'
+    // Blitz is always 8s — never use the longer quizQuestion setting for blitz
+    const questionTime = isBlitz ? 8 : settings.timers?.quizQuestion
     if (!currentQ || !questionTime || game?.buzzer || !isController) {
       setQuestionTimer(0)
       return
@@ -196,7 +196,7 @@ export default function QuizHostScreen() {
       })
     }, 1000)
     return () => clearInterval(questionTimerRef.current)
-  }, [game?.currentQIndex, game?.buzzer, settings.timers?.quizQuestion, isController])
+  }, [game?.currentQIndex, game?.buzzer, settings.timers?.quizQuestion, isController, game?.currentGenre?.gameType])
 
   // ── Auto-advance: correct answer accepted ────────────────────────────────────
   useEffect(() => {

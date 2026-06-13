@@ -26,11 +26,14 @@ export function useBuzzSpeaking() {
   return speaking
 }
 
-// Shared ElevenLabs fetch — avoids duplicating this inside useCallback closures.
+// Shared ElevenLabs fetch — uses /stream endpoint with latency optimisation.
+// optimize_streaming_latency=3 reduces server-side generation time by ~300–500ms
+// at a very minor quality cost. Level 4 halves some phoneme processing but can
+// cause occasional artefacts; 3 is the sweet spot for game use.
 async function _tts(apiKey, voiceId, text, _playUrl) {
   try {
     const res = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?optimize_streaming_latency=3`,
       {
         method: 'POST',
         headers: {

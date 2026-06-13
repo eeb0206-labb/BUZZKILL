@@ -34,6 +34,7 @@ import FartDirectionScreen from './screens/FartDirectionScreen'
 import SpeedBriefsScreen from './screens/SpeedBriefsScreen'
 import ModelModelUNScreen from './screens/ModelModelUNScreen'
 import CrocScreen from './screens/CrocScreen'
+import GameIntroScreen from './screens/GameIntroScreen'
 
 const SCREENS = {
   home: HomeScreen,
@@ -49,6 +50,7 @@ const SCREENS = {
   vote: VoteScreen,
   draw: DrawScreen,
   'dev-admin': DevAdminScreen,
+  'game-intro': GameIntroScreen,
 }
 
 const PAGE_VARIANTS = {
@@ -170,6 +172,16 @@ export default function App() {
     const code = new URLSearchParams(window.location.search).get('code')
     if (code && !gameCode) setScreen('join')
   }, [])
+
+  // Global lobby redirect — when the host returns to lobby from any screen,
+  // all connected clients follow. TV (gamescreen) routes internally so skip it.
+  const gameState = useStore(s => s.game?.state)
+  useEffect(() => {
+    if (myRole === 'gamescreen') return
+    if (gameState === 'lobby' && !PRE_GAME_SCREENS.has(screen) && screen !== 'lobby') {
+      setScreen('lobby')
+    }
+  }, [gameState])
 
   function getScreenComponent() {
     // gamescreen role (the big TV) always shows GameScreen once the game is in progress.

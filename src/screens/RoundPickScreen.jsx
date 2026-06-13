@@ -38,6 +38,8 @@ export default function RoundPickScreen() {
   const shouldSpeak = useShouldBuzzSpeak(game)
   const { speakWithChance } = useBuzzSpeech()
   const prevDealAtRef = useRef(null)
+  const idleIntervalRef = useRef(null)
+  const idleDelayRef = useRef(null)
 
   // votingOpen — 60% chance when genres are first dealt
   useEffect(() => {
@@ -47,6 +49,26 @@ export default function RoundPickScreen() {
     }
     prevDealAtRef.current = game?.dealGenresAt ?? null
   }, [game?.dealGenresAt, shouldSpeak, aiHost])
+
+  // Idle cycling — only starts after 60s of waiting, stops when a winner is picked
+  useEffect(() => {
+    if (!shouldSpeak || !aiHost || winner) {
+      clearTimeout(idleDelayRef.current)
+      clearInterval(idleIntervalRef.current)
+      return
+    }
+    idleDelayRef.current = setTimeout(() => {
+      // Speak one idle line immediately after the 60s wait, then every 30s
+      speakWithChance(getBuzzQuip('idle'), 'idle', null, 1.0)
+      idleIntervalRef.current = setInterval(() => {
+        speakWithChance(getBuzzQuip('idle'), 'idle', null, 1.0)
+      }, 30000)
+    }, 60000)
+    return () => {
+      clearTimeout(idleDelayRef.current)
+      clearInterval(idleIntervalRef.current)
+    }
+  }, [shouldSpeak, aiHost, winner])
 
   const buzzGenreQuip = useMemo(() => {
     if (!aiHost || !winner) return null
@@ -65,6 +87,7 @@ export default function RoundPickScreen() {
   useEffect(() => {
     if (!gameCode) return
     const unsub = subscribeToGame(gameCode, (g) => {
+      if (g.state === 'game-intro') setScreen('game-intro')
       if (g.state === 'powerup-select') setScreen('powerup-select')
       if (g.state === 'quiz') setScreen('quiz-host')
       if (g.state === 'round-over') setScreen('round-over')

@@ -105,11 +105,16 @@ export default function OrdersUpScreen() {
     startOrdersUp(gameCode, game)
   }, [isController, phase, genre?.id, gameCode])
 
+  // Reset autoRef on every phase change so the next phase's auto-advance isn't blocked
+  // by the previous phase setting autoRef.current = true.
+  useEffect(() => {
+    autoRef.current = false
+  }, [phase])
+
   // Reset local state on new order
   useEffect(() => {
     setMyOrder([])
     setSubmitted(false)
-    autoRef.current = false
   }, [challenge.join(',')])
 
   // Auto-advance: reveal → next order (8s)

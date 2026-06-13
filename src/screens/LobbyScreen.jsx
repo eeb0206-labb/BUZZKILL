@@ -805,6 +805,12 @@ export default function LobbyScreen() {
   async function handleStartGame() {
     const count = players.filter(p => ['host', 'player', 'cohost'].includes(p.role)).length
     if (count < 1) { store.setToast({ message: 'Need at least 1 player to start!', icon: '⚠️' }); return }
+    // Flush any pending settings changes before starting — prevents race where
+    // curated playlist / timer changes aren't in Firebase yet when RoundPickScreen mounts
+    if (localSettings) {
+      clearTimeout(autoSaveTimerRef.current)
+      await updateGame(gameCode, { settings: localSettings })
+    }
     await startGame(gameCode)
   }
 

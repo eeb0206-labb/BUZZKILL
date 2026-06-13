@@ -377,14 +377,30 @@ export const BUZZ_QUIPS = {
       "Out of the Question! The answers are honest — one of them is just honest about the wrong thing. Find the imposter. I've had practice spotting the odd one out. I look in the mirror every morning.",
     ],
     musicBangers: [
-      "Music Bangers. Songs will be played. Names will be needed. I suggest you know some.",
-      "It is Music Bangers. The music round. Your musical knowledge is about to be exposed.",
-      "Music Bangers! What's that tune? You either know it or you don't. There is no middle ground.",
-      "The music round. I have excellent taste in music. This is irrelevant. Listen. Name. Score.",
-      "Music Bangers! If you know, you know. If you don't, everyone will know that too.",
-      "Name that tune. Or name that artist. Or both. I want both. You can do both.",
-      "Music Bangers. The notes begin. Your memory is tested. Your taste is irrelevant but noted.",
-      "The music round! I once knew a man who was perfect at this. He was insufferable. Don't be that man.",
+      "MUSIC BANGERS! I'm DJ Kaz, your host, and yes — we are absolutely doing this. I'll play a clip, you buzz in, name the song or the artist. Fingers ready. Let's go!",
+      "Right then! Music Bangers is on! I'm DJ Kaz and I have been putting these tracks together for weeks. Well. One afternoon. But I stand by every single one. Buzz when you know it.",
+      "Music Bangers time! DJ Kaz in the mix. I've got bangers, I've got deep cuts, and I've got one that is going to absolutely divide the room. No spoilers. Let's crack on.",
+      "Welcome to Music Bangers — I'm DJ Kaz! Quick rule: no humming along, it's not fair. Buzz in, name the tune, bag the points. If you know it, you'll know it instantly.",
+      "Right, Music Bangers! I'll play a clip — could be a few seconds, could be a bit more, depends how generous I'm feeling. Buzz in, name the banger, let's have it!",
+      "MUSIC BANGERS! This is the round where we find out who has genuinely been paying attention to music their whole life, and who's been nodding along and pretending. I'm DJ Kaz. Let's find out.",
+      "DJ Kaz here — welcome to Music Bangers! I've got a genuinely brilliant selection of tracks lined up and I am not being modest. This set is a certified banger start to finish. Here we go!",
+      "Music Bangers! I'm DJ Kaz. I could play it from the obvious bit and make it easy. I could also play it from the weird bridge nobody remembers. I'm going to mix it up. You'll see.",
+    ],
+    musicNext: [
+      "Okay, here's the next one! Fingers on the buzzers — this is a certified banger, I will say that much. Don't let it go.",
+      "Right, next tune coming in! You ready? I said — are you READY? Buzz the absolute second you know it.",
+      "Ohhh this next one. This is a good one. I am personally very excited about this track. No hints from me. Just listen.",
+      "New clip! Quick reminder — song OR artist, either one counts. Both together? Chef's kiss. Buzz in!",
+      "Next song incoming. I've played this one in the car about forty times this week. Completely unprofessionally. Here we go.",
+      "Coming up next — and I will say absolutely nothing to give it away. Not a word. Except: banger. Here we go.",
+    ],
+    musicReveal: [
+      "YES! That is the one! Absolute tune. Still a banger. Always will be a banger. Ten out of ten, no notes.",
+      "There it is! That is a certified classic right there. I have no shame in saying that one never gets old. Well played.",
+      "And that's the song! Genuinely one of my favourites, that. Not that it matters. Points have been distributed. Moving on!",
+      "That's the one! How did you not all get that immediately? It's an absolute anthem. I'm not judging. I am, a little. Love it.",
+      "TUNE! That is a full on tune. Right — next one's coming. Keep those fingers ready.",
+      "And the answer is revealed! Look, if you didn't know that one, it might be time for a Spotify audit. Just saying. No judgment. Loads of judgment.",
     ],
     logo: [
       "Logo round. Famous brands. Without their names. Good luck. You'll need it.",
@@ -612,6 +628,244 @@ export const BUZZ_QUIPS = {
     "The detectives were outfoxed. The imposter answered a different question and walked right through the middle of the room undetected.",
     "The imposter is free. Points awarded accordingly. They answered something else entirely and you voted for the wrong person. Gutting.",
   ],
+
+  // ── Orders Up! — Chef Gordon Ramsden ─────────────────────────────────────────
+  // Commanding, furious kitchen voice — think Gordon Ramsay but just different enough
+
+  ordersupMemorize: [
+    "RIGHT. Eyes on the screen, NOW! That is the order. Every single item. You've got seconds and I will NOT repeat myself! Memorise it — three of those items are coming back to you scrambled! STUDY!",
+    "Listen very carefully because I am only saying this ONCE! The order is on screen. Burn it into your brain. Three items, correct sequence, on your phone. THIS IS NOT A DRILL! MEMORISE!",
+    "The order is UP! Read it! Learn it! Three of those items are going to land on your phone in completely the wrong order and your job — your ONE JOB — is to fix them! You have SECONDS! Go!",
+    "Every great chef memorises the order FIRST and thinks second! That order is on screen RIGHT NOW! Do NOT look away from it! Three items will come back to haunt you scrambled! LEARN THEM!",
+    "The order is displayed! Burn it into your MEMORY! Not your maybe-memory — your actual memory! Three items, shuffled on your phone! You need the original sequence! You have no time! MEMORISE!",
+    "READ THE ORDER! All of it! Top to bottom! Because in approximately five seconds three of those items will be on your phone in the WRONG SEQUENCE and I will need you to fix that immediately! GO!",
+  ],
+
+  ordersupOrder: [
+    "PHONES OUT! Three items — SCRAMBLED! Put them back in the sequence you just memorised! First! Second! Third! The clock is running and I don't do refunds on wrong answers! GO!",
+    "The three items are on your phone in the WRONG order! FIX IT! Tap them in the sequence they originally appeared! This is not art — this is precision! First! Second! Third! MOVE!",
+    "Scrambled. Your job: UNSCRAMBLE! Tap the items in the correct original order — one, two, three! Points for every correct position! Full marks if you had the order memorised properly! DID YOU?",
+    "Your phone has three items from that order, shuffled! Put them RIGHT! Tap the sequence! And if you didn't memorise carefully enough, I genuinely cannot help you now! Think back! TAP!",
+    "THREE ITEMS! WRONG ORDER! YOU FIX IT! Tap them in the right sequence! First appeared where? Second appeared where? Third appeared where? This is not complicated! It is just QUICK! GO NOW!",
+    "The sequence is LIVE on your phone! Put those three items back in the order they originally appeared! One point per correct position — FULL MARKS if you get all three! Don't disappoint me! TAP!",
+  ],
+
+  ordersupReveal: [
+    "The correct order is REVEALED! Let's see who had it right and who — let's be honest — completely panicked at the last second! Points going out now!",
+    "There it is! The original sequence! Anyone who got all three in order, I am briefly proud of you! Anyone who got it wrong — we'll say no more! Points distributed!",
+    "That is the correct order! Some of you got it! Some of you — you tried! And that means something! It means very little in terms of points but it means something! Scores updated!",
+    "Correct sequence confirmed! Points awarded! Full marks to those who memorised properly! Partial credit for close! The rest of you — next round! Try harder! Come on!",
+    "That's how it was ordered! Original sequence! Right there! Points going out! If you got it right — magnificent! If you didn't — we don't talk about it! Next order coming up!",
+    "And THAT is the correct sequence! Points to those who nailed it! To everyone else — the order was on screen for LONG ENOUGH! I believe in you! Try harder! Results are in! Move!",
+  ],
+
+  // ── Hot Take — Roxanne Blaze (Sassy American talk-show pundit) ───────────────
+  htVote: [
+    "Phones OUT, people! AGREE or DISAGREE — and before you make this about feelings, let me remind you: the MINORITY earns more. So maybe think for ONCE instead of following the herd. GO.",
+    "Okay okay okay — the statement is on screen and your phone is LIVE. I need you to pick a SIDE. Not your friend's side. YOUR side. Agree or disagree. NOW.",
+    "Here's the thing about Hot Takes — there is a CORRECT answer and then there's what everyone ELSE is going to pick. The minority earns more. Be brave. Be a little controversial. VOTE.",
+    "Statement is up! I've been saying this for YEARS — the crowd is ALWAYS wrong. If you all agree, agreeing gets you NOTHING. Think differently. Vote on your phone.",
+    "ALRIGHT — controversial statement on the screen. I have THOUGHTS. But this isn't my game, it's yours. Agree or disagree. And remember — popular opinions pay LESS. Choose WISELY.",
+    "The take is LIVE. This is your moment. Pick your position. Commit. Because the one thing I cannot STAND is a fence-sitter. Agree or disagree. VOTE.",
+  ],
+
+  htResults: [
+    "And THERE it is — the split is REVEALED. If you're in the minority right now, you are WINNING. If you went with the crowd — honey, you're going to have to DO better.",
+    "The votes are in. Some of you were BOLD. Some of you went safe. The scoreboard does NOT reward safe. This has been PROVEN. By math. By ME.",
+    "Look at that split! I CALLED this. I said the room would go one way and I was RIGHT. Points going to the brave few who went the other way. As ALWAYS.",
+    "Results are in. The bar tells the story. If you see a lot of people on your side right now, you should be CONCERNED. Majority means minority points. That's the SYSTEM.",
+    "Hot take on the results: some of you played it SAFE and it showed. The scoreboard is not here to validate your comfort zone. It's here to PUNISH it.",
+    "The crowd has spoken! And the crowd, as I have said on national television MULTIPLE TIMES, is WRONG. Points go to the rare few who dared to disagree. Magnificent.",
+  ],
+
+  // ── Joke Off — Barry Cracker (Warm, bluff Northern English comedian) ──────────
+  jokeVote: [
+    "Alright, luv — the answers are in and they're... varied. I'm going to be honest with you, some of these are very funny and some of these are a cry for help. Vote for your favourite on your phone.",
+    "Right then. Comedy time. The punchlines are on screen and one of 'em is genuinely brilliant. I know which one. Vote for it on your phone. Or vote for a different one. I'm not your mum.",
+    "Phones out, get voting. Now I've been doing this for thirty-odd years and I can tell you for nowt — comedy is simple. Either it makes you laugh or it doesn't. Vote for the one that does.",
+    "There they are. The jokes. Some people in this room have got it. Some people have... well, they've tried, haven't they? Bless 'em. Vote for the funniest on your phone.",
+    "Right, judging time. And I'll be straight wi' you — I'm a comedian, not a politician, so I'll tell you what I think when the votes are in. For now, pick your favourite. Go on.",
+    "The entries are up. Now remember — we're not judging cleverness, we're not judging depth. We're judging funny. Is it funny? That's all. Vote on your phone.",
+  ],
+
+  jokeResults: [
+    "The crowd has spoken! And the crowd — fair play — they've got decent taste tonight. Points going out. Well done to whoever won that. You're one of us now, kid.",
+    "Results are in! Now I'll tell you — that was a strong round. Not gonna lie. Some of you lot have got genuine potential. The rest of you... don't give up the day job. Points distributed.",
+    "Comedy winner decided! By the people, for the people. That's how it should work, isn't it? Democracy and laughter — finest inventions of the North. Points going out now.",
+    "And that's the result. I'm chuffed — you lot actually had some proper funny answers in there. Points to the winner. Everyone else — keep practicing. It's not too late.",
+    "The funniest answer wins! As it should be. As it always has been. I've been saying this since 1987. Points distributed. Cracking round, that.",
+    "Vote's in. Now THAT — that right there — is what we're here for. Genuine funny. Proper funny. The kind that makes milk come out your nose. Points to the winner. Beautiful.",
+  ],
+
+  // ── Fill the Gap — Abbey Blank (Snarky young British female game show host) ──
+  fgVote: [
+    "Great, the answers are in. Let's have a look at what you've all come up with, shall we? ...Okay. Some of these are choices. Vote for the best one on your phone. If there IS a best one.",
+    "Voting is live. The gap has been filled — by this particular group of people. In this particular room. I'm going to remain professional and not comment. You vote. Your phone.",
+    "Phones out. Vote for your favourite. I'd say 'the best answer wins' but I've seen what's on screen so I'm managing expectations. Go on then. Pick one.",
+    "The answers are up and — yeah. Yeah, sure. Look, somebody in here came up with something quite good, so vote for that one. Your phone is live. Go.",
+    "Voting phase. You've all filled the gap. Some of you filled it well. Others filled it with whatever fell out of your brain first. Vote for the one that actually works. Or the funniest. Phone.",
+    "There they are. All your brilliant answers. Take a moment. Read them. Pick the one that makes you go 'yes, that.' Not the one that makes you go 'oh no.' Vote.",
+  ],
+
+  fgResults: [
+    "Right, so the room has decided. Points distributed. I will keep my personal opinions to myself. ...Mostly.",
+    "And there's the winner. The sentence is now complete. Officially. Eternally. Points going out. I hope you're all proud of what you've done here today.",
+    "Results are in. Majority voted. Majority wins. Whether that makes it the CORRECT answer is a philosophical question I'll be taking home with me tonight. Points distributed.",
+    "The gap is filled — by public vote, which is always a slightly terrifying system. Points go to the most popular answer. Moving on. Quickly.",
+    "Winner declared. And look — it's not MY favourite but nobody asked me and that's fine. Points distributed. Next round. Let's see if we can do better.",
+    "That's the result. Someone in this room came out on top. Well done to them. For the rest of you — this is a learning experience. Points out. Let's go.",
+  ],
+
+  // ── True or False — Stevie Theroux (Louis Theroux's knockoff forgotten brother) ─
+  tfReveal: [
+    "And the answer is — well, I spoke to several experts about this, and one man in a car park in Swindon who may or may not have been correct, and they all said... this. Revealed now.",
+    "You know, I spent three weeks embedded with people who believe the opposite of this and I have to tell you — the truth is stranger. The answer is on screen. Some of you got it. Some of you will want to have a conversation about why you believed that.",
+    "Revealed. Now when I first heard this fact, I thought — no. Surely not. And I drove to a place and I sat with some people and I asked them about it. And they confirmed it. Points going out.",
+    "The correct answer is displayed. I find this one — and I do find this fascinating — I find it says something quite profound about the world we live in. Anyway. Points to those who got it right.",
+    "That's the answer. I had my suspicions. I always have my suspicions. I asked a man about this once and he looked at me for a very long time before answering. He was right. Points distributed.",
+    "True or false — and there it is. Now I think the most interesting thing about this isn't the answer itself, it's the people who got it wrong and why they believed what they believed. I'd love to sit with them for a documentary. Scores updated.",
+  ],
+
+  // ── Draw It — Antonio Pennello (Grumpy elderly Italian-American painter, NY accent) ─
+  drawNewDrawer: [
+    "{name} is drawing now. Dio mio. Okay. Listen — I don't know what you're gonna do with that prompt but I want you to know that I, Antonio Pennello, trained for FORTY YEARS. And I am watching. No pressure.",
+    "Now {name} has the pen. Madonna. {name}, I once painted the ceiling of a restaurant in Little Italy for six months. Six months! And they put a TGI Fridays sign over it. You do better than that. DRAW.",
+    "{name}! You're up! Now I know you think you can draw. Everyone thinks they can draw. Very few people can draw. I have been telling this to students since 1974. Show me I am wrong.",
+    "Is {name}. {name} is the artist for this round. Now — I have seen many things in my life. I have seen the Sistine Chapel. I have seen my cousin Mario's abstract period. This, I approach with open mind. BEGIN.",
+    "{name} takes the pen. Just — just draw what you see in your mind, {name}. And if what you see in your mind looks like a confused chicken, maybe think about what you're doing with your life. I say this with love. Go.",
+    "Now it is {name}'s turn to draw. Antonio Pennello gives you one piece of advice: COMMITMENT. You draw a circle, you commit to the circle. You draw a face, you commit to the face. No second-guessing. BEGIN.",
+  ],
+
+  drawCorrect: [
+    "SOMEONE GOT IT! BRAVISSIMO! ...Actually, looking at that drawing, I am more impressed that anyone guessed it than I am that {name} drew it. Points to {name} the guesser. Well done.",
+    "Correct! {name} looked at what was on screen and understood it! This is — this is a miracle. A small miracle. Antonio has seen bigger. But this is nice. Points going out.",
+    "They got it! {name} got it! The drawing was not art. But it was COMMUNICATION. And sometimes that is enough. Points to {name}. Moving on.",
+    "GUESSED! {name}, you did something. I don't know what you did, but it worked. I have spent my life in studios and galleries and I end up here. But fine. Points going out. Fine.",
+    "Correct answer! {name} made marks on a screen and {name} here interpreted those marks correctly. Forty years of training and I ended up judging this. But FINE. Points going out.",
+    "GOT IT! {name} looked at that drawing — LOOKED at it — and said the right word. I weep. I weep with joy and also something else I cannot name. Points awarded.",
+  ],
+
+  // ── Interior Crocodile Architecture — Delroy Snap (Jamaican character) ───────
+  crocVote: [
+    "Alright now. One of those answers is real — true as the morning tide. The rest? Made up, right now, by the people in this very room. Who's fooling who? Vote on your phone.",
+    "Look carefully at every answer, yeah? One is truth, the others are beautiful deceptions. The crocodile lies very still in the water. Which answer is the crocodile? Vote.",
+    "Phones out, time to decide. The truth is in there hiding among the bluffs. You feel it? Trust that feeling. Your phone is live. Vote.",
+    "Read them all. Don't rush. The real answer and the fake ones — they can look very similar. That's the game. That's always been the game. Vote on your device.",
+    "One of those answers is genuine. One true fact among the fabrications. Your friends tried their best to fool you. Did they succeed? Find out. Vote.",
+    "Voting is live. I've watched crocodiles sit motionless for hours waiting for the right moment. This is your moment. Which answer is real? Make your move. Phone.",
+  ],
+
+  crocReveal: [
+    "And THERE is the truth! Points to those who found it through the deception. And respect — genuine respect — to anyone whose bluff fooled people. That takes a certain skill.",
+    "The real answer revealed! Points to the truth-finders. And bonus points to the convincing liars in this room — I see you and I appreciate you.",
+    "The truth is out. Some of you saw right through the deceptions. Others were fooled by very plausible lies. Both outcomes I find deeply satisfying. Points distributed.",
+    "There it is. The real answer was among them all along, like something waiting in the shallows. Points distributed. The deception industry in this room is thriving.",
+    "Correct answer confirmed. Points to the detectives who spotted reality. Points also to those whose lies were convincing enough to catch votes. Everybody wins something here.",
+    "The truth is revealed! And the bluffs — they played their part. Points going out. Some of you are very, very good at lying. I'm noting that for later.",
+  ],
+
+  // ── Speed Briefs — Zax (Alien documentary narrator from the Outer Reaches) ───
+  sbVote: [
+    "The pitches have been received by our research team — that is me, Zax, from the Outer Reaches of Sector 9. Vote now for the pitch that best communicates the value of the human Lower-Body Coverage Unit. Your device is active.",
+    "Fascinating. The humans have pitched their underpants concepts and the variety is — considerable. Vote for the most compelling pitch on your phone. Our researchers have questions. Our researchers always have questions.",
+    "Voting is live. I have studied human briefs for many years now and what this group has produced today is — well. It is something. Vote for the best pitch. Phone device. Now.",
+    "The briefs have been written. I have transmitted copies back to my home system for study. Vote for the pitch that, in your expert human opinion, best justifies the existence of this particular garment. Vote.",
+    "Your phone is ready for voting. I should note that on my planet, we do not have pants. We have reviewed the concept extensively and we have many questions. But first — vote for the best pitch.",
+    "Pitch voting phase. The Lower-Body Coverage Units have been described, explained, and sold — by you, the participants. Vote for the pitch that convinced you most. The data will be logged. Vote.",
+  ],
+
+  sbResults: [
+    "The votes have been processed. A winning pitch has been identified. Points distributed. Back home, my colleagues will be baffled by all of this. But they will find it very educational.",
+    "Results: a winner has been determined. The most persuasive pitch about human undergarments wins this round. I have filed a full report. Points going out now.",
+    "The votes are in. The humans have decided which pants pitch was best. Our team of researchers — seventeen of us, in a ship — found this entire exercise both baffling and essential. Points distributed.",
+    "Brief champion confirmed. Points awarded. I want everyone to know that I have learned something today. I'm not sure what. But something. Scores updated. Moving on.",
+    "Winning pitch selected by popular vote. This is how humans choose their favourite pants salespeople. I have noted this for my report. 'They vote,' I will write. 'They vote and the winner gets points.' Points going out.",
+    "Results are in. I've been to 47 planets and none of them have a game quite like this one. Points distributed. You should be proud. Or something approximating pride. Onward.",
+  ],
+
+  // ── F-Art Direction — Tarquin Hue (Trust fund baby creative director) ─────────
+  fdPick: [
+    "Right, so the brief is on screen and I need you to pick a colour palette — and I say this with love — try to actually engage with the aesthetic conversation here. Your phone has the options. Pick. Quickly, I have a dinner.",
+    "Okay so the brief is there and the colour options are on your phone, and I just — I need you all to think commercially here. Which palette speaks to the brand? Which one BREATHES? Pick the one that breathes. Go.",
+    "Look, I've been doing this for, God, fourteen years — since Daddy set up the studio — and what I can tell you is that colour is emotional. The brief is on screen. Pick the emotion. Your phone.",
+    "The creative brief is live. Now I know some of you aren't professionals, and that's — that's okay, that's fine — but I need you to try and engage with this on a brand level. Which palette? Phone.",
+    "Alright, colour pick time. The brief is displayed. And what I'm looking for — what any good creative director looks for — is intentionality. Don't just pick a colour. MEAN it. Pick. Phone.",
+    "Brief is up. Palette options are on your phones and I'm going to be straight with you — one of these is correct and the others are, at best, conversation starters. Pick the right one. If you can. Phone.",
+  ],
+
+  fdReveal: [
+    "The room has voted and — okay. Okay, that's an interesting choice. That's a really interesting choice. Points distributed. I'm going to sit with this.",
+    "Results. The majority went with that palette and I'm — yeah. Yeah, I mean. It'll work. Points going out. It's not what I would have done but we can make it work.",
+    "The colour verdict is in. I've sent it to three of my colleagues and they've all had notes. But majority rules, so. Points distributed. We move forward. With this palette. Fine.",
+    "Revealed. The room decided on a colour direction. Our agency would charge forty thousand pounds to arrive at that conclusion but you've done it in thirty seconds, so. Points going out.",
+    "That's the pick. The crowd chose. And look — colour is subjective. That's what I tell clients. Right before I redo their brand anyway. Points distributed. Next brief.",
+    "Results are in. That particular palette has been chosen by democratic process. Which is not how I normally work, but I'm being flexible. Points awarded. The brief deserves better, but fine.",
+  ],
+
+  // ── Outlandish Lawyers — Judge Barnaby Fine ───────────────────────────────────
+  lawyersArgue: [
+    "Counsel, you have the floor. State your case clearly, compellingly, and — I cannot stress this enough — briefly. I have a full docket and very little patience. Begin.",
+    "The floor is yours. You have your position, your argument, and the attention of this court. Use all three wisely. The jury is watching. I am watching. Proceed.",
+    "Argument phase. Both sides know their positions. I would remind everyone that in this court, theatrics are not just permitted — they are, frankly, required. Begin.",
+    "The courtroom is open. Defence, prosecution — you know the case. Make your argument. The facts are, in this particular court, somewhat flexible. The presentation is not. Go.",
+    "Counsel approaches. The case before us today is, I will say on the record, one of the more unusual ones I've presided over. And I once judged a case about a sentient vending machine. State your position. Begin.",
+    "Court is in session. Both sides may proceed. This is an outlandish case, treated with the full seriousness of this court. The jury will decide. Make your case. Start.",
+  ],
+
+  lawyersVote: [
+    "The jury will now deliberate. On your phones: who argued more convincingly? The most compelling case wins the votes. Vote now. Justice — of a kind — awaits.",
+    "Closing statements have been made. The jury must now reach a verdict. Who was more convincing? Vote on your phone. This court respects the jury's decision. Even when it shouldn't.",
+    "Voting is open. Prosecution or defence — who made the better argument? Your phone holds the answer. Give it one. The court will hear the verdict momentarily.",
+    "Phones out. Jury vote is live. You heard both sides. You have your impression. You have your phone. Enter your verdict. The court awaits.",
+    "The arguments are concluded. It is now the jury's duty to determine which counsel was more persuasive. Note: I said persuasive, not correct. Vote. Your phone.",
+    "Jury deliberates. Which side made the stronger case? Vote on your device. And I would remind the jury that this is a binding decision — or as binding as anything gets in this court. Vote.",
+  ],
+
+  lawyersVerdict: [
+    "The jury has returned a verdict. Points distributed to the winning side. Court notes that both arguments were, in their own way, magnificent nonsense. We are adjourned. Briefly.",
+    "Verdict delivered. The jury has spoken. Points go to the winning counsel. The losing side may consider an appeal — there is no appeals process. I mention this for clarity. Onward.",
+    "The court finds in favour of the majority. Points awarded. I've presided over many cases. This was one of them. Scores updated. Next case.",
+    "Verdict in. The people have decided. And while I have my own views on the outcome — and I do have views — this court respects the jury system. Points distributed. Moving on.",
+    "That case is closed. A winner has been determined. Points going to the victorious counsel. Justice, as they say, has been served — in approximately the loosest possible sense. Next.",
+    "The verdict is final. Points to the winning side. I want it noted in the record that this court found both arguments deeply peculiar and yet somehow entirely compelling. Points distributed.",
+  ],
+
+  // ── Model Model UN — General Clay (Angry short general) ──────────────────────
+  mmuInvest: [
+    "ARMS RACE, LADIES AND GENTLEMEN! Fifty points budget! You can buy missiles, upgrade defences, or SAVE — saving is an option — an EMBARRASSING option — but an option! BUY MISSILES! INVEST NOW!",
+    "Phase ONE! The Arms Race begins! I personally bought seventeen missiles in 1987 and I have NO regrets! You have fifty points! Spend them WISELY! Or spend them on missiles! INVEST!",
+    "Right, LISTEN HERE! Fifty points! Missiles are twenty-five! Defences are twenty-five! You could save your points! That's fine! It's also COWARDLY! DECIDE! You have SECONDS!",
+    "PHASE ONE — ARMS RACE! When I was a young general — I was VERY young, I peaked early — we didn't have fancy budgets! We had GRIT! You have fifty points! Don't waste them! INVEST!",
+    "The Arms Race is LIVE! This is my FAVOURITE phase! Missiles! Defences! Strategic investment! I have been doing this for forty years! I am five-foot-four of PURE MILITARY STRATEGY! GO!",
+    "Budget phase is OPEN! Do NOT come to me having saved your fifty points like some kind of ACCOUNTANT! You are building a NATION, not a PENSION FUND! BUY SOMETHING! PREFERABLY MISSILES!",
+  ],
+
+  mmuEspionage: [
+    "ESPIONAGE! The spy phase! I trained operatives for THIRTY YEARS and I can tell you — seventy-five percent of intel is REAL! The other twenty-five is LIES! Like most of what you've heard tonight!",
+    "Phase THREE! Espionage! Your spy networks are ACTIVE! You will receive intelligence! Some of it is true! Some of it is fabricated! This is EXACTLY what diplomatic summits are like! In my experience!",
+    "SPY NETWORKS ARE LIVE! And I want to be very clear — twenty-five percent of the intel coming your way right now was MADE UP! By this system! Which is how actual intelligence works! I LOVE THIS PHASE!",
+    "Espionage phase! Pay very careful attention to what your network tells you because — and I cannot stress this enough — SOME OF IT IS FALSE! Deliberate misinformation! EVALUATE CAREFULLY!",
+    "Your spies are in the field! They're gathering intelligence RIGHT NOW! Some of what they bring back is accurate and some of it is — shall we say — creative! FIFTEEN SECONDS! GO!",
+    "Phase THREE — ESPIONAGE! Intel inbound! Fifteen seconds! Now I know things about this room that would SHOCK you! Nothing to do with the game, I just — I watch people. It's a habit. FOCUS!",
+  ],
+
+  mmuNegotiate: [
+    "{name}! I'M WATCHING YOU! Something about the way {name} invested doesn't add up and I am TELLING everyone right now — do NOT trust {name}'s intel! I have a FEELING! Negotiate accordingly!",
+    "Before you all start your little diplomacy session — {name}! I've been watching {name} ALL GAME and I'm putting it on RECORD: {name} is NOT negotiating in good faith! I KNOW IT! Sixty seconds! GO!",
+    "NEGOTIATION PHASE! Talk! Ally! Vote for truce if you want! But let me just say — and this is from forty years of experience — {name} is LYING TO YOU! I don't have proof! I have INSTINCT! NEGOTIATE!",
+    "You have sixty seconds to form alliances! I'll keep my opinions to myself! ...Actually — {name}! Don't trust {name}! Something in {name}'s eyes! Military training! Just a hunch! NEGOTIATE!",
+    "The negotiation phase is open! Form your alliances! But someone in this room made an agreement they don't intend to keep — and I believe that someone is {name}! I could be wrong! I am rarely wrong!",
+    "Diplomacy time! I believe in diplomacy! I also believe {name} has been DUPLICITOUS this entire round! I will be WATCHING! Go! Talk! Alliance! But keep one eye on {name}! Both eyes! NEGOTIATE!",
+  ],
+
+  mmuResolve: [
+    "PHASE FIVE! RESOLUTION! THE MISSILES FLY! This is the BEST PHASE! THIS IS WHY WE CAME HERE! Defences activate! Interceptions happen! THE PRIZE POT IS AT STAKE! GO GO GO!",
+    "RESOLUTION! MISSILES ARE AIRBORNE! Forty years I've waited for moments like this! Ceramic nations built by HAND going HEAD TO HEAD! I am EMOTIONAL! I AM ALSO VERY TALL IN THIS MOMENT!",
+    "THE MISSILES ARE FLYING! DEFENCES ARE ACTIVATING! Every choice you made in phases one through four is being decided RIGHT NOW! I CANNOT BREATHE! This is MAGNIFICENT!",
+    "RESOLVE PHASE! Watch the event log! Missiles! Interceptions! Shields! The fate of your ceramic nation is decided in FIFTEEN SECONDS! I have NEVER been more alive than right now!",
+    "Phase FIVE — RESOLUTION! The political phase is OVER! The investment phase is OVER! The negotiation is OVER! NOW! WE! LAUNCH! I am General Clay and I APPROVE of this!",
+    "MISSILES! FLYING! NOW! Everything you've built — every alliance, every missile, every point of defence — it's ALL being counted RIGHT NOW! LOOK AT THE BOARD! CERAMIC NATIONS AT WAR!",
+  ],
 }
 
 const GENRE_KEY_MAP = {
@@ -720,6 +974,15 @@ export function getBuzzQuip(event, context = {}) {
     case 'comebackTime':
       quip = pick(BUZZ_QUIPS.comebackTime, seed)
       break
+    case 'ordersupMemorize':
+      quip = pick(BUZZ_QUIPS.ordersupMemorize)
+      break
+    case 'ordersupOrder':
+      quip = pick(BUZZ_QUIPS.ordersupOrder)
+      break
+    case 'ordersupReveal':
+      quip = pick(BUZZ_QUIPS.ordersupReveal)
+      break
     case 'whodVote':
       quip = pick(BUZZ_QUIPS.whodVote)
       break
@@ -728,6 +991,78 @@ export function getBuzzQuip(event, context = {}) {
       break
     case 'whodEscaped':
       quip = pick(BUZZ_QUIPS.whodEscaped)
+      break
+    case 'htVote':
+      quip = pick(BUZZ_QUIPS.htVote)
+      break
+    case 'htResults':
+      quip = pick(BUZZ_QUIPS.htResults)
+      break
+    case 'jokeVote':
+      quip = pick(BUZZ_QUIPS.jokeVote)
+      break
+    case 'jokeResults':
+      quip = pick(BUZZ_QUIPS.jokeResults)
+      break
+    case 'fgVote':
+      quip = pick(BUZZ_QUIPS.fgVote)
+      break
+    case 'fgResults':
+      quip = pick(BUZZ_QUIPS.fgResults)
+      break
+    case 'tfReveal':
+      quip = pick(BUZZ_QUIPS.tfReveal)
+      break
+    case 'drawNewDrawer':
+      quip = pick(BUZZ_QUIPS.drawNewDrawer)?.replace('{name}', context.name || 'Someone')
+      break
+    case 'drawCorrect':
+      quip = pick(BUZZ_QUIPS.drawCorrect)?.replace('{name}', context.name || 'Someone')
+      break
+    case 'crocVote':
+      quip = pick(BUZZ_QUIPS.crocVote)
+      break
+    case 'crocReveal':
+      quip = pick(BUZZ_QUIPS.crocReveal)
+      break
+    case 'sbVote':
+      quip = pick(BUZZ_QUIPS.sbVote)
+      break
+    case 'sbResults':
+      quip = pick(BUZZ_QUIPS.sbResults)
+      break
+    case 'fdPick':
+      quip = pick(BUZZ_QUIPS.fdPick)
+      break
+    case 'fdReveal':
+      quip = pick(BUZZ_QUIPS.fdReveal)
+      break
+    case 'lawyersArgue':
+      quip = pick(BUZZ_QUIPS.lawyersArgue)
+      break
+    case 'lawyersVote':
+      quip = pick(BUZZ_QUIPS.lawyersVote)
+      break
+    case 'lawyersVerdict':
+      quip = pick(BUZZ_QUIPS.lawyersVerdict)
+      break
+    case 'mmuInvest':
+      quip = pick(BUZZ_QUIPS.mmuInvest)
+      break
+    case 'mmuEspionage':
+      quip = pick(BUZZ_QUIPS.mmuEspionage)
+      break
+    case 'mmuNegotiate':
+      quip = pick(BUZZ_QUIPS.mmuNegotiate)?.replace(/\{name\}/g, context.name || 'Someone')
+      break
+    case 'mmuResolve':
+      quip = pick(BUZZ_QUIPS.mmuResolve)
+      break
+    case 'musicNext':
+      quip = pick(BUZZ_QUIPS.musicNext)
+      break
+    case 'musicReveal':
+      quip = pick(BUZZ_QUIPS.musicReveal)
       break
     case 'idle':
     default:

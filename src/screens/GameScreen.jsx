@@ -2383,6 +2383,81 @@ function FinalView({ game, players }) {
   )
 }
 
+// ── GAME INTRO VIEW (TV side) ─────────────────────────────────────────────────
+const TV_GAME_RULES = {
+  quiz:          ['Buzz in first — then answer', 'Correct earns points · Wrong loses them', 'Someone else can steal after a wrong answer'],
+  blitz:         ['Questions come fast — type your answer on your phone', 'Correct earns points · Wrong loses them', 'No buzzing — just type and submit'],
+  fill:          ['A sentence with a blank — complete it however you like', 'Everyone votes for the best answer', 'Most votes wins the round'],
+  joke:          ['Write the funniest punchline to the setup', 'All punchlines shown anonymously — vote for your favourite', 'Most votes wins'],
+  hottake:       ['Agree or Disagree with the statement?', 'Rarer opinion = more points — go against the crowd', 'Most players picking the same thing split fewer points'],
+  whod:          ['Everyone gets the same question — except one secret imposter', 'The imposter answers a completely different question', 'Read answers aloud, then vote for who you think is lying'],
+  music:         ['A music clip plays — buzz in when you know it', 'Name the song or artist for points', 'Wrong answer passes it to the next buzzer'],
+  draw:          ['One player draws their prompt on their phone — live on this screen', 'Everyone else types their guess', 'First correct guess earns points — and so does the artist'],
+  lawyers:       ['Two players argue opposite sides of an absurd statement', '90 seconds each side to make their case', 'Audience votes — most convincing wins'],
+  redemption:    ['Questions come from your wrong answers earlier', 'Get it right this time for 1.25× points', 'Chance to claw back the leaderboard'],
+  truefalse:     ['A weird statement appears — True or False?', 'Everyone answers simultaneously', 'Correct earns points — no buzzing here'],
+  ordersup:      ["Memorise the customer's order — then sequence 3 items correctly", 'Accuracy wins · speed is the tiebreaker', 'Points go to whoever gets the order right'],
+  fartdirection: ['Memorise the colour position', 'A fart scrambles the wheel', 'Find the original colour in the new arrangement'],
+  speedbriefs:   ['Write a tagline for the given product in 60 seconds', 'The room votes for the best', 'Most votes wins'],
+  modelmodelun:  ['Build your ceramic nation and stake your investment', 'Launch missiles, gather intel, forge alliances', 'Last model standing wins'],
+  croc:          ['One player secretly writes a fake answer to the trivia question', 'Everyone votes on which answer is real', 'Spot the fake to earn points'],
+}
+
+function GameIntroView({ game }) {
+  const genre = game?.currentGenre
+  const gameType = genre?.gameType
+  const rules = TV_GAME_RULES[gameType] || ['Get ready to play!', 'Follow the instructions on screen', 'Most points at the end wins']
+  const accentColor = genre?.color || 'var(--accent)'
+  const icon = { quiz:'❓', blitz:'⚡', fill:'✏️', joke:'😂', hottake:'🔥', whod:'🕵️', music:'🎵', draw:'🎨', lawyers:'⚖️', redemption:'🔄', truefalse:'🤔', ordersup:'🍔', fartdirection:'💨', speedbriefs:'🩲', modelmodelun:'🏺', croc:'🐊' }[gameType] || '🎮'
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 36, padding: '40px 60px', overflow: 'hidden' }}>
+
+      {/* Genre identity */}
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 'clamp(3rem, 7vw, 5rem)', lineHeight: 1, marginBottom: 16 }}>{icon}</div>
+        <div style={{ fontFamily: 'var(--font-head)', fontSize: 'clamp(2rem, 5vw, 3.5rem)', color: accentColor, lineHeight: 1.1 }}>
+          {genre?.name || 'Up Next'}
+        </div>
+        <div style={{ marginTop: 10, fontSize: 'clamp(0.85rem, 1.8vw, 1.1rem)', color: 'var(--text3)', letterSpacing: '0.06em' }}>
+          HOW TO PLAY
+        </div>
+      </div>
+
+      {/* Rules */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%', maxWidth: 680 }}>
+        {rules.map((step, i) => (
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.15 + i * 0.12 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 18 }}
+          >
+            <div style={{
+              width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+              background: `${accentColor}20`, border: `2px solid ${accentColor}50`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1rem', color: accentColor,
+            }}>
+              {i + 1}
+            </div>
+            <div style={{ fontSize: 'clamp(1rem, 2.2vw, 1.35rem)', color: 'var(--text1)', lineHeight: 1.4 }}>{step}</div>
+          </motion.div>
+        ))}
+      </div>
+
+      <motion.div
+        animate={{ opacity: [0.4, 1, 0.4] }}
+        transition={{ repeat: Infinity, duration: 2 }}
+        style={{ fontSize: 'clamp(0.9rem, 1.8vw, 1.1rem)', color: 'var(--text3)' }}
+      >
+        Waiting for host to start…
+      </motion.div>
+    </div>
+  )
+}
+
 // ── LOBBY VIEW ────────────────────────────────────────────────────────────────
 function LobbyView({ game }) {
   const players = Object.values(game?.players || {}).filter(p => p.role !== 'gamescreen')
@@ -2429,9 +2504,17 @@ function TVBuzzCorner({ game, gameCode }) {
   const prevQIndexRef = useRef(null)
   const prevAnswerRevRef = useRef(false)
   const prevWrongCountRef = useRef(0)
+  const prevMusicQRef = useRef(null)
   const idleTimer = useRef(null)
+  const gameStateRef = useRef(game?.state)
   const { speakWithChance } = useBuzzSpeech()
   const speaking = useBuzzSpeaking()
+
+  // Keep a ref to current game state so scheduleIdle can read it without stale closure
+  useEffect(() => { gameStateRef.current = game?.state }, [game?.state])
+
+  // Active game states — Buzz stays silent and doesn't cycle idle quips during these
+  const ACTIVE_STATES = new Set(['quiz', 'game-intro', 'powerup-select'])
 
   // Build game context for the 20% contextual TTS path.
   function buildCtx() {
@@ -2462,12 +2545,14 @@ function TVBuzzCorner({ game, gameCode }) {
   function scheduleIdle() {
     clearTimeout(idleTimer.current)
     idleTimer.current = setTimeout(() => {
-      const q = getBuzzQuip('idle')
-      setQuip(q)
-      setEvent('idle')
-      speakWithChance(q, 'idle', null, 1.0)
+      // Only cycle idle quips when NOT in an active game — between rounds / lobby / round-over
+      if (!ACTIVE_STATES.has(gameStateRef.current)) {
+        const q = getBuzzQuip('idle')
+        setQuip(q)
+        setEvent('idle')
+      }
       scheduleIdle()
-    }, 14000 + Math.random() * 8000)
+    }, 18000 + Math.random() * 12000)
   }
 
   useEffect(() => {
@@ -2526,9 +2611,11 @@ function TVBuzzCorner({ game, gameCode }) {
     }
   }, [game?.state, game?.currentQIndex, game?.currentRound])
 
-  // Read question aloud when a new question appears (uses TTS if no pre-recorded clip)
+  // Read question aloud when a new question appears — standard quiz only, not blitz or music
+  // Blitz: 8s timer, TTS latency eats too much. Music: song name IS the answer — can't read it aloud
   useEffect(() => {
-    if (game?.state !== 'quiz' || !game?.currentQ?.q) return
+    const gameType = game?.currentGenre?.gameType
+    if (game?.state !== 'quiz' || !game?.currentQ?.q || gameType === 'blitz' || gameType === 'music') return
     clearTimeout(idleTimer.current)
     const q = game.currentQ.q
     setQuip(q)
@@ -2536,12 +2623,30 @@ function TVBuzzCorner({ game, gameCode }) {
     speakWithChance(q, 'question', game?.currentGenre?.id || null, 1.0, buildCtx())
   }, [game?.currentQIndex])
 
-  // Correct answer (15%)
+  // Music Bangers: DJ Kaz hypes up each new clip (replaces question reading — song name = answer)
+  useEffect(() => {
+    const gameType = game?.currentGenre?.gameType
+    if (gameType !== 'music') return
+    const qIdx = game?.currentQIndex ?? null
+    if (qIdx === prevMusicQRef.current) return
+    prevMusicQRef.current = qIdx
+    if (qIdx === null || !game?.currentQ) return
+    clearTimeout(idleTimer.current)
+    setQuipAndSpeak(getBuzzQuip('musicNext'), 'musicNext', 1.0)
+    scheduleIdle()
+  }, [game?.currentQIndex])
+
+  // Correct answer (15% generic; 100% for Music Bangers via musicReveal)
   useEffect(() => {
     const isRevealed = !!game?.answerRevealed
     if (isRevealed && !prevAnswerRevRef.current) {
       clearTimeout(idleTimer.current)
-      setQuipAndSpeak(getBuzzQuip('correct'), 'correct', 0.15)
+      const gameType = game?.currentGenre?.gameType
+      if (gameType === 'music') {
+        setQuipAndSpeak(getBuzzQuip('musicReveal'), 'musicReveal', 1.0)
+      } else {
+        setQuipAndSpeak(getBuzzQuip('correct'), 'correct', 0.15)
+      }
       scheduleIdle()
     }
     prevAnswerRevRef.current = isRevealed
@@ -2578,6 +2683,182 @@ function TVBuzzCorner({ game, gameCode }) {
 
     scheduleIdle()
   }, [game?.whodPhase, game?.whodCaught])
+
+  // Orders Up — phase transitions (chef voiceover)
+  const prevOUPhaseRef = useRef(null)
+  useEffect(() => {
+    if (game?.currentGenre?.gameType !== 'ordersup') return
+    const phase = game?.ouPhase
+    if (phase === prevOUPhaseRef.current) return
+    prevOUPhaseRef.current = phase
+
+    clearTimeout(idleTimer.current)
+
+    if (phase === 'memorize') {
+      setQuipAndSpeak(getBuzzQuip('ordersupMemorize'), 'ordersupMemorize', 1.0)
+    } else if (phase === 'order') {
+      setQuipAndSpeak(getBuzzQuip('ordersupOrder'), 'ordersupOrder', 1.0)
+    } else if (phase === 'reveal') {
+      setQuipAndSpeak(getBuzzQuip('ordersupReveal'), 'ordersupReveal', 1.0)
+    }
+
+    scheduleIdle()
+  }, [game?.ouPhase])
+
+  // Hot Take — phase transitions
+  const prevHtPhaseRef = useRef(null)
+  useEffect(() => {
+    if (game?.currentGenre?.gameType !== 'hottake') return
+    const phase = game?.htPhase
+    if (phase === prevHtPhaseRef.current) return
+    prevHtPhaseRef.current = phase
+    clearTimeout(idleTimer.current)
+    if (phase === 'vote') setQuipAndSpeak(getBuzzQuip('htVote'), 'htVote', 1.0)
+    else if (phase === 'results') setQuipAndSpeak(getBuzzQuip('htResults'), 'htResults', 1.0)
+    scheduleIdle()
+  }, [game?.htPhase])
+
+  // Joke Off — phase transitions
+  const prevJokePhaseRef = useRef(null)
+  useEffect(() => {
+    if (game?.currentGenre?.gameType !== 'joke') return
+    const phase = game?.jokePhase
+    if (phase === prevJokePhaseRef.current) return
+    prevJokePhaseRef.current = phase
+    clearTimeout(idleTimer.current)
+    if (phase === 'vote') setQuipAndSpeak(getBuzzQuip('jokeVote'), 'jokeVote', 1.0)
+    else if (phase === 'results') setQuipAndSpeak(getBuzzQuip('jokeResults'), 'jokeResults', 1.0)
+    scheduleIdle()
+  }, [game?.jokePhase])
+
+  // Fill the Gap — phase transitions
+  const prevFgPhaseRef = useRef(null)
+  useEffect(() => {
+    if (game?.currentGenre?.gameType !== 'fill') return
+    const phase = game?.fgPhase
+    if (phase === prevFgPhaseRef.current) return
+    prevFgPhaseRef.current = phase
+    clearTimeout(idleTimer.current)
+    if (phase === 'vote') setQuipAndSpeak(getBuzzQuip('fgVote'), 'fgVote', 1.0)
+    else if (phase === 'results') setQuipAndSpeak(getBuzzQuip('fgResults'), 'fgResults', 1.0)
+    scheduleIdle()
+  }, [game?.fgPhase])
+
+  // True or False — reveal
+  const prevTfPhaseRef = useRef(null)
+  useEffect(() => {
+    if (game?.currentGenre?.gameType !== 'truefalse') return
+    const phase = game?.tfPhase
+    if (phase === prevTfPhaseRef.current) return
+    prevTfPhaseRef.current = phase
+    clearTimeout(idleTimer.current)
+    if (phase === 'reveal') setQuipAndSpeak(getBuzzQuip('tfReveal'), 'tfReveal', 1.0)
+    scheduleIdle()
+  }, [game?.tfPhase])
+
+  // Draw It — new drawer + winner
+  const prevDrawerRef = useRef(null)
+  const prevDrawWinnerRef = useRef(null)
+  useEffect(() => {
+    if (game?.currentGenre?.gameType !== 'draw') return
+    const drawerId = game?.drawerId
+    const drawWinner = game?.drawWinner
+    if (drawerId && drawerId !== prevDrawerRef.current) {
+      prevDrawerRef.current = drawerId
+      prevDrawWinnerRef.current = null
+      const drawerName = game?.players?.[drawerId]?.name || 'Someone'
+      clearTimeout(idleTimer.current)
+      setQuipAndSpeak(getBuzzQuip('drawNewDrawer', { name: drawerName }), 'drawNewDrawer', 1.0)
+      scheduleIdle()
+    } else if (drawWinner && drawWinner !== prevDrawWinnerRef.current) {
+      prevDrawWinnerRef.current = drawWinner
+      const winnerName = game?.players?.[drawWinner]?.name || 'Someone'
+      clearTimeout(idleTimer.current)
+      setQuipAndSpeak(getBuzzQuip('drawCorrect', { name: winnerName }), 'drawCorrect', 1.0)
+      scheduleIdle()
+    }
+  }, [game?.drawerId, game?.drawWinner])
+
+  // Interior Crocodile Architecture — vote + reveal
+  const prevCrocPhaseRef = useRef(null)
+  useEffect(() => {
+    if (game?.currentGenre?.gameType !== 'croc') return
+    const phase = game?.crocPhase
+    if (phase === prevCrocPhaseRef.current) return
+    prevCrocPhaseRef.current = phase
+    clearTimeout(idleTimer.current)
+    if (phase === 'vote') setQuipAndSpeak(getBuzzQuip('crocVote'), 'crocVote', 1.0)
+    else if (phase === 'reveal') setQuipAndSpeak(getBuzzQuip('crocReveal'), 'crocReveal', 1.0)
+    scheduleIdle()
+  }, [game?.crocPhase])
+
+  // Speed Briefs — vote + results
+  const prevSbPhaseRef = useRef(null)
+  useEffect(() => {
+    if (game?.currentGenre?.gameType !== 'speedbriefs') return
+    const phase = game?.sbPhase
+    if (phase === prevSbPhaseRef.current) return
+    prevSbPhaseRef.current = phase
+    clearTimeout(idleTimer.current)
+    if (phase === 'vote') setQuipAndSpeak(getBuzzQuip('sbVote'), 'sbVote', 1.0)
+    else if (phase === 'results') setQuipAndSpeak(getBuzzQuip('sbResults'), 'sbResults', 1.0)
+    scheduleIdle()
+  }, [game?.sbPhase])
+
+  // F-Art Direction — pick + reveal
+  const prevFdPhaseRef = useRef(null)
+  useEffect(() => {
+    if (game?.currentGenre?.gameType !== 'fartdirection') return
+    const phase = game?.fdPhase
+    if (phase === prevFdPhaseRef.current) return
+    prevFdPhaseRef.current = phase
+    clearTimeout(idleTimer.current)
+    if (phase === 'pick') setQuipAndSpeak(getBuzzQuip('fdPick'), 'fdPick', 1.0)
+    else if (phase === 'reveal') setQuipAndSpeak(getBuzzQuip('fdReveal'), 'fdReveal', 1.0)
+    scheduleIdle()
+  }, [game?.fdPhase])
+
+  // Outlandish Lawyers — argue + vote + verdict
+  const prevLawyersPhaseRef = useRef(null)
+  useEffect(() => {
+    if (game?.currentGenre?.gameType !== 'lawyers') return
+    const phase = game?.lawyersPhase
+    if (phase === prevLawyersPhaseRef.current) return
+    prevLawyersPhaseRef.current = phase
+    clearTimeout(idleTimer.current)
+    if (phase === 'defence1' || phase === 'defence2' || phase === 'prosecution1' || phase === 'prosecution2') {
+      setQuipAndSpeak(getBuzzQuip('lawyersArgue'), 'lawyersArgue', 1.0)
+    } else if (phase === 'vote') {
+      setQuipAndSpeak(getBuzzQuip('lawyersVote'), 'lawyersVote', 1.0)
+    } else if (phase === 'results') {
+      setQuipAndSpeak(getBuzzQuip('lawyersVerdict'), 'lawyersVerdict', 1.0)
+    }
+    scheduleIdle()
+  }, [game?.lawyersPhase])
+
+  // Model Model UN — General Clay phase transitions + accusation
+  const prevMmuPhaseRef = useRef(null)
+  useEffect(() => {
+    if (game?.currentGenre?.gameType !== 'modelmodelun') return
+    const phase = game?.mmuPhase
+    if (phase === prevMmuPhaseRef.current) return
+    prevMmuPhaseRef.current = phase
+    clearTimeout(idleTimer.current)
+    if (phase === 'invest') {
+      setQuipAndSpeak(getBuzzQuip('mmuInvest'), 'mmuInvest', 1.0)
+    } else if (phase === 'espionage') {
+      setQuipAndSpeak(getBuzzQuip('mmuEspionage'), 'mmuEspionage', 1.0)
+    } else if (phase === 'negotiate') {
+      const playerNames = Object.values(game?.players || {}).map(p => p.name).filter(Boolean)
+      const accusedName = playerNames.length
+        ? playerNames[Math.floor(Math.random() * playerNames.length)]
+        : 'Someone'
+      setQuipAndSpeak(getBuzzQuip('mmuNegotiate', { name: accusedName }), 'mmuNegotiate', 1.0)
+    } else if (phase === 'resolve') {
+      setQuipAndSpeak(getBuzzQuip('mmuResolve'), 'mmuResolve', 1.0)
+    }
+    scheduleIdle()
+  }, [game?.mmuPhase])
 
   if (!aiHost || game?.settings?.questionMaster) return null
 
@@ -2795,6 +3076,7 @@ export default function GameScreen() {
 
   function renderView() {
     if (state === 'lobby')                                return <LobbyView game={game} />
+    if (state === 'game-intro')                           return <GameIntroView game={game} players={players} />
     if (state === 'round-pick' || state === 'vote')       return <VotingView game={game} players={players} />
     if (state === 'powerup-select')                       return <PowerupView game={game} players={players} />
     if (state === 'round-over')                           return <RoundOverView game={game} players={players} />

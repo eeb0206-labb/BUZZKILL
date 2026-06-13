@@ -432,41 +432,65 @@ export function useGame() {
     await update(ref(db, `games/${code}/roundVotes`), { [playerId]: genreId })
   }, [])
 
-  // Lock in a genre and start round. Lawyers stays on powerup-select (needs host setup);
-  // everything else goes straight to quiz.
+  // Lock in a genre — always goes to game-intro first so players see the rules screen.
+  // beginRound (below) handles the actual game-type-specific setup when host taps "Let's Go".
   const selectGenre = useCallback(async (code, game, genreId, genreName, genreEmoji, gameType, gameColor) => {
-    const isLawyers = gameType === 'lawyers'
-    const isCroc = gameType === 'croc'
-    const base = {
+    await update(ref(db), {
       [`games/${code}/currentGenre`]: { id: genreId, name: genreName, emoji: genreEmoji, gameType, color: gameColor },
       [`games/${code}/powerupRound`]: {},
-    }
-    if (isLawyers) {
-      await update(ref(db), { ...base, [`games/${code}/state`]: 'powerup-select' })
-    } else if (isCroc) {
+      [`games/${code}/state`]: 'game-intro',
+    })
+  }, [])
+
+  // Transition from game-intro to the actual round. Handles per-game-type setup that was
+  // previously in selectGenre. For whod, setup is combined into one Firebase update to
+  // prevent the "!phase" loading flash on player phones.
+  const beginRound = useCallback(async (code, game) => {
+    const gameType = game.currentGenre?.gameType
+    if (gameType === 'lawyers') {
+      await update(ref(db, `games/${code}`), { state: 'powerup-select' })
+    } else if (gameType === 'croc') {
       const count = game?.settings?.questionsPerRound || 8
       const questions = getCrocQuestions(count)
-      await update(ref(db), {
-        ...base,
-        [`games/${code}/state`]: 'quiz',
-        [`games/${code}/crocPhase`]: 'submit',
-        [`games/${code}/crocQIndex`]: 0,
-        [`games/${code}/crocQuestions`]: questions,
-        [`games/${code}/crocCurrentQ`]: questions[0],
-        [`games/${code}/crocBluffs`]: {},
-        [`games/${code}/crocOptions`]: [],
-        [`games/${code}/crocVotes`]: {},
-        [`games/${code}/crocScoreDeltas`]: {},
-        [`games/${code}/crocCorrectVoters`]: [],
-        [`games/${code}/crocNoneRight`]: false,
-        [`games/${code}/crocUniqueKnowledge`]: null,
+      await update(ref(db, `games/${code}`), {
+        state: 'quiz',
+        crocPhase: 'submit',
+        crocQIndex: 0,
+        crocQuestions: questions,
+        crocCurrentQ: questions[0],
+        crocBluffs: {},
+        crocOptions: [],
+        crocVotes: {},
+        crocScoreDeltas: {},
+        crocCorrectVoters: [],
+        crocNoneRight: false,
+        crocUniqueKnowledge: null,
+      })
+    } else if (gameType === 'whod') {
+      // Combine whodunnit setup + state change into one atomic update so WhodunnitScreen
+      // never mounts with an empty whodPhase.
+      const players = Object.values(game.players || {}).filter(p => p.role !== 'gamescreen')
+      if (players.length < 2) return
+      const imposterId = players[Math.floor(Math.random() * players.length)].id
+      const genreData = getGenreById(game.currentGenre?.id)
+      const pairs = genreData?.pairs || []
+      const pair = pairs[Math.floor(Math.random() * pairs.length)] || { normal: 'What is your favourite film?', imposter: 'What is your favourite TV show?' }
+      await update(ref(db, `games/${code}`), {
+        state: 'quiz',
+        whodPhase: 'answer',
+        whodImposterId: imposterId,
+        whodPrompt: pair.normal,
+        whodImposterPrompt: pair.imposter,
+        whodAnswers: {},
+        whodVotes: {},
+        whodStartAt: Date.now(),
+        whodCount: 1,
       })
     } else {
-      await update(ref(db), {
-        ...base,
-        [`games/${code}/state`]: 'quiz',
-        [`games/${code}/currentQIndex`]: 0,
-        [`games/${code}/currentQ`]: null,
+      await update(ref(db, `games/${code}`), {
+        state: 'quiz',
+        currentQIndex: 0,
+        currentQ: null,
       })
     }
   }, [])
@@ -757,6 +781,7 @@ export function useGame() {
       await update(ref(db, `games/${code}`), {
         drawPromptIndex: nextIdx,
         drawingData: null,
+        drawerId: null,
         drawWinner: null,
         drawWinGuess: null,
       })
@@ -1089,7 +1114,7 @@ export function useGame() {
   }, [])
 
   const startJokeVoting = useCallback(async (code) => {
-    await update(ref(db, `games/${code}`), { jokePhase: 'vote' })
+    await update(ref(db, `games/${code}`), { jokePhase: 'vote', jokePromptStartAt: Date.now() })
   }, [])
 
   const voteJoke = useCallback(async (code, voterId, targetId) => {
@@ -1183,9 +1208,19 @@ export function useGame() {
       updates[`games/${code}/players/${p.id}/score`] = (p.score || 0) + pts
       updates[`games/${code}/players/${p.id}/roundScore`] = (p.roundScore || 0) + pts
     })
+    // Compute per-player points for display on all devices
+    const playerPts = {}
+    players.forEach(p => {
+      const v = votes[p.id]
+      if (!v) return
+      const opposite = v === 'agree' ? disagrees : agrees
+      const base = Math.round((opposite / total) * 150)
+      if (base > 0) playerPts[p.id] = base * (game?.powerupRound?.[p.id] ? 2 : 1)
+    })
+    updates[`games/${code}/htResults`] = { majority, agrees, disagrees, playerPts }
     updates[`games/${code}/htPhase`] = 'results'
     await update(ref(db), updates)
-    return { majority, agrees, disagrees }
+    return { majority, agrees, disagrees, playerPts }
   }, [])
 
   const nextHotTakePrompt = useCallback(async (code, game) => {
@@ -2109,7 +2144,7 @@ export function useGame() {
 
   return {
     createGame, joinGame, subscribeToGame, updateGame, updatePlayer, kickPlayer,
-    dealGenres, voteForGenre, selectGenre,
+    dealGenres, voteForGenre, selectGenre, beginRound,
     buzzIn, clearBuzzer, markAnswer, nextQuestion, loadFirstQuestion,
     startNextRound, startGame,
     submitInsideJoke, activatePowerupRound, usePowerup,

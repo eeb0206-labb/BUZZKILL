@@ -30,13 +30,13 @@ export default function HotTakeScreen() {
 
   const [timeLeft, setTimeLeft] = useState(0)
   const [showSettings, setShowSettings] = useState(false)
-  const [results, setResults] = useState(null)
   const timerRef = useRef(null)
   const autoRef = useRef(false)
 
   const phase = game?.htPhase
   const prompt = game?.htPrompt
   const votes = game?.htVotes || {}
+  const results = game?.htResults || null
   const players = Object.values(game?.players || {}).filter(p => p.role !== 'gamescreen')
   const genre = game?.currentGenre
   const promptNum = (game?.htPromptCount || 0) + 1
@@ -98,7 +98,6 @@ export default function HotTakeScreen() {
 
   // Reset on new prompt
   useEffect(() => {
-    setResults(null)
     autoRef.current = false
   }, [prompt])
 
@@ -109,7 +108,6 @@ export default function HotTakeScreen() {
 
   async function handleReveal() {
     const res = await revealHotTakeResults(gameCode, game)
-    setResults(res)
     if (res?.majority === 'agree') playCorrect()
     else playWrong()
     autoRef.current = false
@@ -246,48 +244,55 @@ export default function HotTakeScreen() {
               </div>
             </div>
 
-            {results && (() => {
-              const t = (results.agrees + results.disagrees) || 1
-              const agreePts = Math.round((results.disagrees / t) * 150)
-              const disagreePts = Math.round((results.agrees / t) * 150)
-              return (
-                <motion.div
-                  className="card center col gap-6"
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.5 }}
-                >
-                  <div style={{ fontWeight: 700, textAlign: 'center' }}>
-                    🎯 Rarer opinion = more points
-                  </div>
-                  <div className="row gap-16" style={{ justifyContent: 'center' }}>
-                    <div style={{ textAlign: 'center' }}>
-                      <div>🔥 Agree</div>
+            {/* Per-player results — shows for all devices once htResults is in Firebase */}
+            <div className="card">
+              <div style={{ fontWeight: 700, marginBottom: 10 }}>Scores</div>
+              <div className="col gap-8">
+                {players.map(p => {
+                  const v = votes[p.id]
+                  const pts = results?.playerPts?.[p.id]
+                  return (
+                    <motion.div
+                      key={p.id}
+                      className="row gap-8"
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.1 }}
+                    >
+                      <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={30} />
+                      <div className="flex-1" style={{ fontWeight: 600, fontSize: '0.9rem' }}>{p.name}</div>
+                      <span style={{ fontSize: '1.1rem' }}>
+                        {v === 'agree' ? '🔥' : v === 'disagree' ? '❄️' : '–'}
+                      </span>
+                      {phase === 'results' && (
+                        <span style={{
+                          fontFamily: 'var(--font-mono)', fontWeight: 700, minWidth: 54, textAlign: 'right',
+                          fontSize: '0.85rem', color: pts ? 'var(--gold)' : 'var(--text3)',
+                        }}>
+                          {pts ? `+${pts}` : v ? '+0' : '–'}
+                        </span>
+                      )}
+                    </motion.div>
+                  )
+                })}
+              </div>
+              {results && (() => {
+                const t = (results.agrees + results.disagrees) || 1
+                const agreePts = Math.round((results.disagrees / t) * 150)
+                const disagreePts = Math.round((results.agrees / t) * 150)
+                return (
+                  <div className="row gap-16" style={{ justifyContent: 'center', marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                    <div style={{ textAlign: 'center', fontSize: '0.82rem' }}>
+                      <div style={{ color: 'var(--text3)', marginBottom: 2 }}>🔥 Agree worth</div>
                       <div style={{ fontFamily: 'var(--font-mono)', color: '#e63946', fontWeight: 700 }}>+{agreePts}</div>
                     </div>
-                    <div style={{ textAlign: 'center' }}>
-                      <div>❄️ Disagree</div>
+                    <div style={{ textAlign: 'center', fontSize: '0.82rem' }}>
+                      <div style={{ color: 'var(--text3)', marginBottom: 2 }}>❄️ Disagree worth</div>
                       <div style={{ fontFamily: 'var(--font-mono)', color: '#4895ef', fontWeight: 700 }}>+{disagreePts}</div>
                     </div>
                   </div>
-                </motion.div>
-              )
-            })()}
-
-            {/* Who voted what */}
-            <div className="card">
-              <div style={{ fontWeight: 700, marginBottom: 10 }}>Who said what</div>
-              <div className="col gap-6">
-                {players.map(p => (
-                  <div key={p.id} className="row gap-8">
-                    <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={28} />
-                    <div className="flex-1" style={{ fontWeight: 600, fontSize: '0.9rem' }}>{p.name}</div>
-                    <span style={{ fontSize: '1.2rem' }}>
-                      {votes[p.id] === 'agree' ? '🔥' : votes[p.id] === 'disagree' ? '❄️' : '–'}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                )
+              })()}
             </div>
 
             {isController && (

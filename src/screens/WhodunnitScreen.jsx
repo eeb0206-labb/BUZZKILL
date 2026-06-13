@@ -113,7 +113,7 @@ export default function WhodunnitScreen() {
 
   // Reset on new round
   useEffect(() => {
-    setMyAnswer(''); setSubmitted(false); setResult(null); autoRef.current = false
+    setMyAnswer(''); setSubmitted(false); autoRef.current = false
   }, [game?.whodImposterId])
 
   async function handleSubmit() {
@@ -366,7 +366,7 @@ export default function WhodunnitScreen() {
               <div className="row gap-8">
                 <button className="btn btn-ghost flex-1" onClick={() => endWhodRound(gameCode)}>End Round</button>
                 {roundNum < roundLimit && (
-                  <button className="btn btn-gold flex-1" onClick={() => { setResult(null); startWhodunnit(gameCode, game) }}>
+                  <button className="btn btn-gold flex-1" onClick={() => { autoRef.current = false; startWhodunnit(gameCode, game) }}>
                     Next Round 🕵️
                   </button>
                 )}

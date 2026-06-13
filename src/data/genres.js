@@ -27,6 +27,7 @@ export const GAME_TYPES = {
   fartdirection:   { id: 'fartdirection',   label: 'F-Art Direction',   icon: '💨',  desc: "Spot the colour — then a fart steals it. Find it again on the colour wheel!" },
   speedbriefs:     { id: 'speedbriefs',     label: 'Speed Briefs',      icon: '🩲',  desc: "Write the world's greatest one-liner for the world's strangest pants." },
   modelmodelun:    { id: 'modelmodelun',    label: 'Model Model UN',    icon: '🧱',  desc: "Build your ceramic nation, fire missiles, spy on rivals — last model standing wins the prize pot!" },
+  croc:            { id: 'croc',            label: 'Interior Crocodile Architecture', icon: '🐊', desc: "Spot the fake answer — Balderdash meets pub quiz" },
   // ── Planned / coming soon ──────────────────────────────────────────────────────
   // pitch:     Sell the most ridiculous product using a random word combo (Jackbox: Patently Stupid)
   // twotruth:  Two Truths & A Lie — everyone submits 3 statements, group guesses the lie
@@ -709,10 +710,9 @@ export const CREATIVE_GENRES = [
     ],
   },
   // ─── Music Bangers ─────────────────────────────────────────────────────────
-  // clipUrl: short audio clip URL played to all players.
-  // Host controls playback. Players buzz to name the song + artist.
-  // Add real clip URLs here — keep clips under 15 seconds.
-  // Free sources: freemusicarchive.org, soundcloud free tracks, short previews.
+  // clipUrl: YouTube URL for the clip. Add ?t=XX to start mid-song (seconds) — makes it harder.
+  // If a URL stops working (video removed), just paste a new YouTube link.
+  // Answer format: "Song Title - Artist" — players can type either half and still score.
   {
     id: 'musicbangers',
     name: 'Music Bangers',
@@ -720,27 +720,37 @@ export const CREATIVE_GENRES = [
     gameType: 'music',
     color: '#f72585',
     category: 'creative',
-    draft: true, // needs final clip URLs before going live
     questions: [
-      // Format: { q: display label, a: "Song - Artist", hint: 'Year/hint', clipUrl: 'YouTube share URL with ?t=start_seconds' }
-      // clipUrl: paste any https://youtu.be/... or https://www.youtube.com/watch?v=... link here.
-      // The ?t= parameter sets where in the song it starts (seconds) — mid-song is more of a challenge.
-      // If a URL stops working (video removed), just paste a new YouTube link.
-      { q: 'Name this tune 🎵', a: 'Bohemian Rhapsody - Queen',             hint: '1975', clipUrl: 'https://youtu.be/fJ9rUzIMcZQ?t=163' },
-      { q: 'Name this tune 🎵', a: 'Smells Like Teen Spirit - Nirvana',     hint: '1991', clipUrl: 'https://youtu.be/hTWKbfoikeg?t=25'  },
-      { q: 'Name this tune 🎵', a: 'Blinding Lights - The Weeknd',          hint: '2019', clipUrl: 'https://youtu.be/4NRXx6U8ABQ?t=22'  },
-      { q: 'Name this tune 🎵', a: 'Rolling in the Deep - Adele',           hint: '2010', clipUrl: 'https://youtu.be/rYEDA3JcQqw?t=14'  },
-      { q: 'Name this tune 🎵', a: 'Mr Brightside - The Killers',           hint: '2003', clipUrl: 'https://youtu.be/gGdGFtwCNBE?t=14'  },
-      { q: 'Name this tune 🎵', a: 'Angels - Robbie Williams',              hint: '1997', clipUrl: 'https://youtu.be/qDzCGGtRxqM?t=28'  },
-      { q: 'Name this tune 🎵', a: 'Shape of You - Ed Sheeran',             hint: '2017', clipUrl: 'https://youtu.be/JGwWNGJdvx8?t=17'  },
-      { q: 'Name this tune 🎵', a: 'Africa - Toto',                         hint: '1982', clipUrl: 'https://youtu.be/FTQbiNvZqaY?t=39'  },
-      { q: 'Name this tune 🎵', a: 'Uptown Funk - Bruno Mars',              hint: '2014', clipUrl: 'https://youtu.be/OPf0YbXqDm0?t=40'  },
-      { q: 'Name this tune 🎵', a: 'Sandstorm - Darude',                    hint: '1999', clipUrl: 'https://youtu.be/y6120QOlsfU?t=108' },
-      { q: 'Name this tune 🎵', a: "Don't Stop Believin' - Journey",        hint: '1981', clipUrl: 'https://youtu.be/1k8craCGpgs?t=62'  },
-      { q: 'Name this tune 🎵', a: 'Waterloo - ABBA',                       hint: '1974', clipUrl: 'https://youtu.be/Sj_9CiNkkn4?t=14'  },
-      { q: 'Name this tune 🎵', a: "Sweet Child O' Mine - Guns N' Roses",   hint: '1987', clipUrl: 'https://youtu.be/1w7OgIMMRc4?t=14'  },
-      { q: 'Name this tune 🎵', a: 'Toxic - Britney Spears',                hint: '2004', clipUrl: 'https://youtu.be/LOZuxwVk7TU?t=19'  },
-      { q: 'Name this tune 🎵', a: 'Get Lucky - Daft Punk',                 hint: '2013', clipUrl: 'https://youtu.be/5NV6Rdv1a3I?t=30'  },
+      { q: 'Name this tune 🎵', a: 'Billie Jean - Michael Jackson',                      hint: 'The 1983 track that debuted the Moonwalk',                                   clipUrl: 'https://www.youtube.com/watch?v=Zi_XLOBDo_Y'  },
+      { q: 'Name this tune 🎵', a: 'Smells Like Teen Spirit - Nirvana',                  hint: 'The ultimate 1991 grunge anthem',                                             clipUrl: 'https://www.youtube.com/watch?v=hTWKbfoikeg'   },
+      { q: 'Name this tune 🎵', a: 'Never Gonna Give You Up - Rick Astley',              hint: "The internet's favourite prank song",                                         clipUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'   },
+      { q: 'Name this tune 🎵', a: 'Toxic - Britney Spears',                             hint: 'The music video features a very dangerous flight attendant',                  clipUrl: 'https://www.youtube.com/watch?v=LOZuxwVk7TU'   },
+      { q: 'Name this tune 🎵', a: 'Take On Me - a-ha',                                  hint: 'Famous for its rotoscoped, pencil-sketch music video',                        clipUrl: 'https://www.youtube.com/watch?v=djV11Xbc914'   },
+      { q: 'Name this tune 🎵', a: 'I Will Always Love You - Whitney Houston',           hint: 'The legendary vocal track from The Bodyguard soundtrack',                    clipUrl: 'https://www.youtube.com/watch?v=3JWTaaS7LdU'   },
+      { q: 'Name this tune 🎵', a: 'Hey Ya! - Outkast',                                  hint: 'Shake it like a Polaroid picture!',                                           clipUrl: 'https://www.youtube.com/watch?v=PWgvGjAhvIw'   },
+      { q: 'Name this tune 🎵', a: 'Wonderwall - Oasis',                                 hint: '"Today is gonna be the day that they\'re gonna throw it back to you..."',    clipUrl: 'https://www.youtube.com/watch?v=bx1Bh8ZvH84'   },
+      { q: 'Name this tune 🎵', a: 'Sweet Dreams (Are Made of This) - Eurythmics',      hint: '1983 synth-pop classic with iconic orange hair',                             clipUrl: 'https://www.youtube.com/watch?v=qeMFqkcPYcg'   },
+      { q: 'Name this tune 🎵', a: 'Bohemian Rhapsody - Queen',                          hint: 'Contains the lyrics "Scaramouche, Scaramouche, will you do the Fandango?"', clipUrl: 'https://www.youtube.com/watch?v=fJ9rUzIMcZQ'   },
+      { q: 'Name this tune 🎵', a: 'Mr. Brightside - The Killers',                       hint: 'A certified indie anthem about jealousy that never leaves the UK charts',    clipUrl: 'https://www.youtube.com/watch?v=gGdGFtwPNsQ'   },
+      { q: 'Name this tune 🎵', a: 'Blank Space - Taylor Swift',                         hint: "She's got a blank space baby, and she'll write your name",                   clipUrl: 'https://www.youtube.com/watch?v=e-ORhEE9VVg'   },
+      { q: 'Name this tune 🎵', a: 'What Makes You Beautiful - One Direction',           hint: 'The debut single that launched five boys into global superstardom in 2011',  clipUrl: 'https://www.youtube.com/watch?v=QJO3ROT-A4E'   },
+      { q: 'Name this tune 🎵', a: 'All Star - Smash Mouth',                             hint: 'Somebody once told me this song opens a very famous ogre movie',             clipUrl: 'https://www.youtube.com/watch?v=L_jWHffIx5E'   },
+      { q: 'Name this tune 🎵', a: 'Gangnam Style - PSY',                                hint: 'The first YouTube video to ever hit 1 billion views',                        clipUrl: 'https://www.youtube.com/watch?v=9bZkp7q19f0'   },
+      { q: 'Name this tune 🎵', a: 'Uptown Funk - Mark Ronson ft. Bruno Mars',           hint: '"Don\'t believe me? Just watch!"',                                           clipUrl: 'https://www.youtube.com/watch?v=OPf0YbXqDm0'   },
+      { q: 'Name this tune 🎵', a: 'Call Me Maybe - Carly Rae Jepsen',                  hint: '"Hey, I just met you, and this is crazy..."',                                clipUrl: 'https://www.youtube.com/watch?v=fWNaR-rxAic'   },
+      { q: 'Name this tune 🎵', a: 'Do I Wanna Know? - Arctic Monkeys',                  hint: 'Features an iconic animated white soundwave in the music video',             clipUrl: 'https://www.youtube.com/watch?v=bpOSxM0rNPM'   },
+      { q: 'Name this tune 🎵', a: 'Rolling in the Deep - Adele',                        hint: 'We could have had it all...',                                                clipUrl: 'https://www.youtube.com/watch?v=GoByzCBX25c'   },
+      { q: 'Name this tune 🎵', a: 'Shape of You - Ed Sheeran',                          hint: 'The most streamed song of the 2010s on Spotify',                             clipUrl: 'https://www.youtube.com/watch?v=JGwWNGJdvx8'   },
+      { q: 'Name this tune 🎵', a: 'Despacito - Luis Fonsi ft. Daddy Yankee',            hint: 'A massive 2017 Spanish-language hit that Justin Bieber later jumped on',    clipUrl: 'https://www.youtube.com/watch?v=kJQP7kiw5Fk'   },
+      { q: 'Name this tune 🎵', a: 'Waka Waka (This Time for Africa) - Shakira',         hint: 'The official song of the 2010 FIFA World Cup',                               clipUrl: 'https://www.youtube.com/watch?v=pRpeEdMmmQ0'   },
+      { q: 'Name this tune 🎵', a: 'Sandstorm - Darude',                                 hint: 'The ultimate 90s techno instrumental and legendary internet meme',           clipUrl: 'https://www.youtube.com/watch?v=y6120QOlsfU'   },
+      { q: 'Name this tune 🎵', a: 'Seven Nation Army - The White Stripes',              hint: 'You will hear this iconic bassline chanted at almost every major sporting event', clipUrl: 'https://www.youtube.com/watch?v=0J2QdDbelmY' },
+      { q: 'Name this tune 🎵', a: 'Dancing Queen - ABBA',                               hint: '"You can dance, you can jive, having the time of your life."',              clipUrl: 'https://www.youtube.com/watch?v=xFrGuyw1V8s'   },
+      { q: 'Name this tune 🎵', a: 'Wannabe - Spice Girls',                              hint: '"If you want my future, forget my past."',                                   clipUrl: 'https://www.youtube.com/watch?v=gJLIiF15wjQ'   },
+      { q: 'Name this tune 🎵', a: 'Single Ladies (Put a Ring on It) - Beyoncé',         hint: 'The music video features an instantly recognizable black-and-white dance routine', clipUrl: 'https://www.youtube.com/watch?v=4m1EFMoRFvY' },
+      { q: 'Name this tune 🎵', a: 'Lose Yourself - Eminem',                             hint: "Mom's spaghetti.",                                                           clipUrl: 'https://www.youtube.com/watch?v=_Yhyp-_hX2s'   },
+      { q: 'Name this tune 🎵', a: 'Somebody That I Used To Know - Gotye',               hint: "Now you're just a body-painted singer I used to know.",                     clipUrl: 'https://www.youtube.com/watch?v=8UVNT4wvIGY'   },
+      { q: 'Name this tune 🎵', a: 'Party In The U.S.A. - Miley Cyrus',                 hint: '"Got my hands up, they\'re playin\' my song, the butterflies fly away."',   clipUrl: 'https://www.youtube.com/watch?v=M11SvDtPBhA'   },
     ],
   },
   // ─── Whodunnit ──────────────────────────────────────────────────────────────
@@ -753,6 +763,7 @@ export const CREATIVE_GENRES = [
     gameType: 'whod',
     color: '#4895ef',
     category: 'creative',
+    minPlayers: 2,
     pairs: [
       { normal: "What's your favourite pizza topping?",      imposter: "What's your favourite pasta sauce?" },
       { normal: "What's your favourite film genre?",         imposter: "What's your favourite book genre?" },
@@ -897,7 +908,6 @@ export const CREATIVE_GENRES = [
     gameType: 'croc',
     color: '#1e6b3c',
     category: 'creative',
-    minPlayers: 3,
     // No questions array — questions loaded at runtime from crocgame.js
     // Balderdash-style bluffing: write a fake answer, vote for the real one
   },
