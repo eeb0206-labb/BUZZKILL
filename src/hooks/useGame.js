@@ -452,6 +452,7 @@ export function useGame() {
     } else if (gameType === 'croc') {
       const count = game?.settings?.questionsPerRound || 8
       const questions = getCrocQuestions(count)
+      const submitSeconds = game?.settings?.crocSubmitSeconds || 60
       await update(ref(db, `games/${code}`), {
         state: 'quiz',
         crocPhase: 'submit',
@@ -465,6 +466,9 @@ export function useGame() {
         crocCorrectVoters: [],
         crocNoneRight: false,
         crocUniqueKnowledge: null,
+        crocRevealIdx: -1,
+        crocCorrectSubmitters: {},
+        crocTimerEnds: Date.now() + submitSeconds * 1000,
       })
     } else if (gameType === 'whod') {
       // Combine whodunnit setup + state change into one atomic update so WhodunnitScreen
@@ -2060,11 +2064,16 @@ export function useGame() {
     if (!currentQ) return
     const norm = s => s.toLowerCase().trim().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ')
     const realNorm = norm(currentQ.a)
-    const options = [{ text: currentQ.a, isReal: true, authorId: null }]
+    const options = [{ text: currentQ.a, isReal: true, authorId: null, isHouse: false }]
     Object.entries(bluffs).forEach(([authorId, bluffText]) => {
       if (norm(bluffText) !== realNorm) {
-        options.push({ text: bluffText, isReal: false, authorId })
+        options.push({ text: bluffText, isReal: false, authorId, isHouse: false })
       }
+    })
+    // Always add 2 house lies from the question's houseLies array
+    const available = [...(currentQ.houseLies || [])].sort(() => Math.random() - 0.5)
+    available.slice(0, 2).forEach(lie => {
+      options.push({ text: lie, isReal: false, authorId: null, isHouse: true })
     })
     options.sort(() => Math.random() - 0.5)
     await update(ref(db), {
@@ -2082,6 +2091,7 @@ export function useGame() {
     const players = Object.values(game?.players || {}).filter(p => p.role === 'player')
     const options = game?.crocOptions || []
     const votes = game?.crocVotes || {}
+    const correctSubmitters = game?.crocCorrectSubmitters || {}
     const realIdx = options.findIndex(o => o.isReal)
     const correctVoters = Object.entries(votes)
       .filter(([, idx]) => Number(idx) === realIdx)
@@ -2091,21 +2101,24 @@ export function useGame() {
     const scoreDeltas = {}
     players.forEach(p => {
       let delta = 0
+      // Bonus for knowing the real answer during bluff phase
+      if (correctSubmitters[p.id]) delta += 100
+      // Truth points: voted for the real answer (+300)
       const myVote = votes[p.id]
       if (myVote !== undefined && myVote !== null) {
-        delta += Number(myVote) === realIdx ? 150 : -25
+        if (Number(myVote) === realIdx) delta += 300
+        // House lie or wrong player bluff: no points, no penalty
       }
-      const myOptIdx = options.findIndex(o => !o.isReal && o.authorId === p.id)
+      // Fooling points: +200 per player who voted for your lie
+      const myOptIdx = options.findIndex(o => !o.isReal && !o.isHouse && o.authorId === p.id)
       if (myOptIdx >= 0) {
-        delta += Object.values(votes).filter(v => Number(v) === myOptIdx).length * 25
+        delta += Object.values(votes).filter(v => Number(v) === myOptIdx).length * 200
       }
       scoreDeltas[p.id] = delta
     })
-    if (noneRight) {
-      players.forEach(p => { scoreDeltas[p.id] = (scoreDeltas[p.id] || 0) - 25 })
-    }
+    // Unique knowledge bonus
     if (uniqueKnowledge) {
-      scoreDeltas[uniqueKnowledge] = (scoreDeltas[uniqueKnowledge] || 0) + 25
+      scoreDeltas[uniqueKnowledge] = (scoreDeltas[uniqueKnowledge] || 0) + 75
     }
     const updates = {}
     players.forEach(p => {
@@ -2118,7 +2131,17 @@ export function useGame() {
     updates[`games/${code}/crocCorrectVoters`] = correctVoters
     updates[`games/${code}/crocNoneRight`] = noneRight
     updates[`games/${code}/crocUniqueKnowledge`] = uniqueKnowledge || null
+    updates[`games/${code}/crocRevealIdx`] = 0
     await update(ref(db), updates)
+  }, [])
+
+  const submitCrocCorrectAnswer = useCallback(async (code, playerId) => {
+    await update(ref(db), { [`games/${code}/crocCorrectSubmitters/${playerId}`]: true })
+  }, [])
+
+  const advanceCrocReveal = useCallback(async (code, game) => {
+    const current = game?.crocRevealIdx ?? 0
+    await update(ref(db), { [`games/${code}/crocRevealIdx`]: current + 1 })
   }, [])
 
   const nextCrocQuestion = useCallback(async (code, game) => {
@@ -2128,6 +2151,7 @@ export function useGame() {
       await update(ref(db, `games/${code}`), { state: 'round-over' })
       return
     }
+    const submitSeconds = game?.settings?.crocSubmitSeconds || 60
     await update(ref(db), {
       [`games/${code}/crocPhase`]: 'submit',
       [`games/${code}/crocQIndex`]: nextIdx,
@@ -2139,6 +2163,9 @@ export function useGame() {
       [`games/${code}/crocCorrectVoters`]: [],
       [`games/${code}/crocNoneRight`]: false,
       [`games/${code}/crocUniqueKnowledge`]: null,
+      [`games/${code}/crocRevealIdx`]: -1,
+      [`games/${code}/crocCorrectSubmitters`]: {},
+      [`games/${code}/crocTimerEnds`]: Date.now() + submitSeconds * 1000,
     })
   }, [])
 
@@ -2167,6 +2194,7 @@ export function useGame() {
     advanceMMUToResolve, checkMMUAfterResolve, advanceMMUToNextRound,
     submitMMUSplitSteal, finalizeMMUSplitSteal, checkMMUTruceVotes, endMMUGame,
     requestPause, cancelPauseRequest, unpauseGame,
-    submitCrocBluff, revealCrocOptions, submitCrocVote, revealCrocResults, nextCrocQuestion,
+    submitCrocBluff, submitCrocCorrectAnswer, revealCrocOptions, submitCrocVote,
+    revealCrocResults, advanceCrocReveal, nextCrocQuestion,
   }
 }

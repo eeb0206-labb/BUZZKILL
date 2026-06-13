@@ -6,6 +6,8 @@ import { Avatar, Toast, MuteButton } from '../components/ui'
 import { useSound } from '../hooks/useSound'
 import SettingsOverlay from '../components/SettingsOverlay'
 
+const norm = s => s.toLowerCase().trim().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ')
+
 export default function CrocScreen() {
   const store = useStore()
   const { game, myId, gameCode } = { game: store.game, myId: store.myId, gameCode: store.gameCode }
@@ -15,18 +17,21 @@ export default function CrocScreen() {
   const isQM = !!settings.questionMaster
   const {
     subscribeToGame,
-    submitCrocBluff, revealCrocOptions,
-    submitCrocVote, revealCrocResults,
-    nextCrocQuestion,
+    submitCrocBluff, submitCrocCorrectAnswer,
+    revealCrocOptions, submitCrocVote,
+    revealCrocResults, advanceCrocReveal, nextCrocQuestion,
   } = useGame()
   const { playCorrect, playWrong } = useSound()
   const [showSettings, setShowSettings] = useState(false)
   const [myBluff, setMyBluff] = useState('')
   const [bluffSubmitted, setBluffSubmitted] = useState(false)
+  const [typedRealAnswer, setTypedRealAnswer] = useState(false)
   const [myVote, setMyVote] = useState(null)
   const [voteSubmitted, setVoteSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [timeLeft, setTimeLeft] = useState(0)
   const autoRef = useRef(false)
+  const timerRef = useRef(null)
 
   const phase = game?.crocPhase || 'submit'
   const currentQ = game?.crocCurrentQ
@@ -39,12 +44,13 @@ export default function CrocScreen() {
   const uniqueKnowledge = game?.crocUniqueKnowledge || null
   const qIndex = game?.crocQIndex || 0
   const totalQs = (game?.crocQuestions || []).length
+  const revealIdx = game?.crocRevealIdx ?? -1
+  const correctSubmitters = game?.crocCorrectSubmitters || {}
 
   const allPlayers = Object.values(game?.players || {}).filter(p => p.role === 'player')
   const me = game?.players?.[myId]
   const myColor = me?.colorHex || 'var(--accent)'
 
-  // Subscribe to game state changes
   useEffect(() => {
     if (!gameCode) return
     const unsub = subscribeToGame(gameCode, (g) => {
@@ -58,43 +64,59 @@ export default function CrocScreen() {
   useEffect(() => {
     setMyBluff('')
     setBluffSubmitted(false)
+    setTypedRealAnswer(false)
     setMyVote(null)
     setVoteSubmitted(false)
     autoRef.current = false
   }, [qIndex])
 
-  // Auto-advance for no-QM mode (controller only)
+  // Timer countdown for submit phase
+  useEffect(() => {
+    if (phase !== 'submit' || !game?.crocTimerEnds) return
+    clearInterval(timerRef.current)
+    timerRef.current = setInterval(() => {
+      setTimeLeft(Math.max(0, Math.ceil((game.crocTimerEnds - Date.now()) / 1000)))
+    }, 500)
+    return () => clearInterval(timerRef.current)
+  }, [phase, game?.crocTimerEnds])
+
+  // Auto-advance (no-QM mode, controller only)
   useEffect(() => {
     if (!isController || isQM || autoRef.current) return
-    if (phase === 'submit') {
-      const submitted = Object.keys(bluffs).length
-      if (submitted >= allPlayers.length && allPlayers.length > 0) {
-        autoRef.current = true
-        setTimeout(() => {
-          revealCrocOptions(gameCode, game).then(() => { autoRef.current = false })
-        }, 1200)
-      }
+    const submittedCount = Object.keys(bluffs).length
+    const votedCount = Object.keys(votes).length
+    if (phase === 'submit' && submittedCount >= allPlayers.length && allPlayers.length > 0) {
+      autoRef.current = true
+      setTimeout(() => {
+        revealCrocOptions(gameCode, game).then(() => { autoRef.current = false })
+      }, 1200)
     }
-    if (phase === 'vote') {
-      const voted = Object.keys(votes).length
-      if (voted >= allPlayers.length && allPlayers.length > 0) {
-        autoRef.current = true
-        setTimeout(() => {
-          revealCrocResults(gameCode, game).then(() => { autoRef.current = false })
-        }, 1200)
-      }
+    if (phase === 'vote' && votedCount >= allPlayers.length && allPlayers.length > 0) {
+      autoRef.current = true
+      setTimeout(() => {
+        revealCrocResults(gameCode, game).then(() => { autoRef.current = false })
+      }, 1200)
     }
   }, [phase, bluffs, votes, allPlayers.length, isController, isQM])
 
   async function handleSubmitBluff() {
     if (!myBluff.trim() || bluffSubmitted) return
-    setBluffSubmitted(true)
-    await submitCrocBluff(gameCode, myId, myBluff)
+    const isCorrect = norm(myBluff) === norm(currentQ?.a || '')
+    if (isCorrect) {
+      // Award a knowledge bonus but force them to write a lie
+      setTypedRealAnswer(true)
+      setMyBluff('')
+      await submitCrocCorrectAnswer(gameCode, myId)
+      playCorrect?.()
+    } else {
+      setBluffSubmitted(true)
+      await submitCrocBluff(gameCode, myId, myBluff)
+    }
   }
 
   async function handleVote(optionIdx) {
     if (voteSubmitted) return
-    const myOptionIdx = options.findIndex(o => !o.isReal && o.authorId === myId)
+    const myOptionIdx = options.findIndex(o => !o.isReal && !o.isHouse && o.authorId === myId)
     if (optionIdx === myOptionIdx) return
     setMyVote(optionIdx)
     setVoteSubmitted(true)
@@ -113,6 +135,12 @@ export default function CrocScreen() {
     setLoading(false)
   }
 
+  async function handleRevealNext() {
+    setLoading(true)
+    await advanceCrocReveal(gameCode, game)
+    setLoading(false)
+  }
+
   async function handleNext() {
     setLoading(true)
     await nextCrocQuestion(gameCode, game)
@@ -123,10 +151,13 @@ export default function CrocScreen() {
   const votedCount = Object.keys(votes).length
   const myDelta = scoreDeltas[myId]
   const iGotItRight = correctVoters.includes(myId)
-  const myOptionIdx = options.findIndex(o => !o.isReal && o.authorId === myId)
+  const iKnewIt = !!correctSubmitters[myId]
+  const myOptionIdx = options.findIndex(o => !o.isReal && !o.isHouse && o.authorId === myId)
   const fooledCount = phase === 'reveal'
     ? Object.values(votes).filter(v => Number(v) === myOptionIdx).length
     : 0
+  const allRevealed = revealIdx >= options.length && options.length > 0
+  const timerUrgent = timeLeft > 0 && timeLeft <= 15
 
   return (
     <div className="screen">
@@ -165,9 +196,14 @@ export default function CrocScreen() {
               <div style={{ fontSize: '0.65rem', color: '#27913e', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, marginBottom: 6 }}>
                 🐊 Interior Crocodile Architecture
               </div>
-              <div style={{ fontSize: 'clamp(0.95rem, 3.5vw, 1.15rem)', lineHeight: 1.5, fontWeight: 600 }}>
+              <div style={{ fontSize: 'clamp(0.95rem, 3.5vw, 1.1rem)', lineHeight: 1.55, fontWeight: 600 }}>
                 {currentQ.q}
               </div>
+              {currentQ.hint && phase === 'submit' && (
+                <div style={{ marginTop: 6, fontSize: '0.72rem', color: 'var(--text3)', fontStyle: 'italic' }}>
+                  💡 {currentQ.hint}
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -175,14 +211,51 @@ export default function CrocScreen() {
         {/* ── SUBMIT PHASE ── */}
         {phase === 'submit' && (
           <motion.div className="col gap-12" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+
+            {/* Timer */}
+            {timeLeft > 0 && (
+              <motion.div
+                style={{
+                  textAlign: 'center',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '1.4rem',
+                  fontWeight: 900,
+                  color: timerUrgent ? 'var(--red)' : '#52b788',
+                }}
+                animate={timerUrgent ? { scale: [1, 1.05, 1] } : {}}
+                transition={{ repeat: Infinity, duration: 0.8 }}
+              >
+                {timeLeft}s
+              </motion.div>
+            )}
+
+            {typedRealAnswer && !bluffSubmitted && (
+              <motion.div
+                className="card col center gap-6"
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                style={{ background: 'rgba(251,191,36,0.1)', borderColor: 'rgba(251,191,36,0.4)' }}
+              >
+                <div style={{ fontSize: '1.4rem' }}>🧠</div>
+                <div style={{ fontWeight: 700, color: '#f59e0b', textAlign: 'center' }}>
+                  You knew it! +100 bonus
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text2)', textAlign: 'center' }}>
+                  Now write a convincing LIE to fool everyone else.
+                </div>
+              </motion.div>
+            )}
+
             {!bluffSubmitted ? (
               <>
-                <div style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--text2)' }}>
-                  Write a convincing fake answer. Fool the crowd. 🎭
-                </div>
+                {!typedRealAnswer && (
+                  <div style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--text2)' }}>
+                    Write a convincing fake answer. Fool the crowd. 🎭
+                  </div>
+                )}
                 <input
                   className="input"
-                  placeholder="Your fake answer..."
+                  placeholder={typedRealAnswer ? "Your fake answer..." : "Your fake answer..."}
                   value={myBluff}
                   onChange={e => setMyBluff(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleSubmitBluff()}
@@ -195,7 +268,7 @@ export default function CrocScreen() {
                   disabled={!myBluff.trim()}
                   style={{ background: '#1e6b3c', borderColor: '#1e6b3c' }}
                 >
-                  Submit Bluff →
+                  {typedRealAnswer ? 'Submit Lie →' : 'Submit Bluff →'}
                 </button>
               </>
             ) : (
@@ -205,8 +278,10 @@ export default function CrocScreen() {
                 animate={{ scale: 1, opacity: 1 }}
                 style={{ background: 'rgba(30,107,60,0.08)', borderColor: 'rgba(30,107,60,0.3)' }}
               >
-                <div style={{ fontSize: '1.5rem' }}>✅</div>
-                <div style={{ fontWeight: 700, color: '#27913e' }}>Bluff submitted!</div>
+                <div style={{ fontSize: '1.5rem' }}>{iKnewIt ? '🧠✅' : '✅'}</div>
+                <div style={{ fontWeight: 700, color: '#27913e' }}>
+                  {iKnewIt ? 'Lie submitted! (+100 knowledge bonus)' : 'Bluff submitted!'}
+                </div>
                 <div style={{ fontSize: '0.8rem', color: 'var(--text2)', textAlign: 'center' }}>
                   "{myBluff}"
                 </div>
@@ -216,7 +291,6 @@ export default function CrocScreen() {
               </motion.div>
             )}
 
-            {/* Controller: QM reveal button */}
             {isController && isQM && bluffSubmitted && (
               <motion.div className="col gap-8" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text3)', textAlign: 'center' }}>
@@ -242,7 +316,7 @@ export default function CrocScreen() {
             </div>
             <div className="col gap-8">
               {options.map((opt, idx) => {
-                const isMyBluff = !opt.isReal && opt.authorId === myId
+                const isMyBluff = !opt.isReal && !opt.isHouse && opt.authorId === myId
                 const isSelected = myVote === idx
                 const isDisabled = voteSubmitted || isMyBluff
 
@@ -286,7 +360,6 @@ export default function CrocScreen() {
               })}
             </div>
 
-            {/* Controller: QM reveal results button */}
             {isController && isQM && (
               <motion.div className="col gap-8" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text3)', textAlign: 'center' }}>
@@ -307,49 +380,34 @@ export default function CrocScreen() {
         {/* ── REVEAL PHASE ── */}
         {phase === 'reveal' && (
           <motion.div className="col gap-10" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-            {/* My score delta */}
-            {myDelta !== undefined && (
-              <motion.div
-                className="card col center gap-4"
-                initial={{ scale: 0.85, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ type: 'spring', stiffness: 300, damping: 22 }}
-                style={{
-                  background: myDelta > 0 ? 'rgba(87,204,153,0.1)' : myDelta < 0 ? 'rgba(230,57,70,0.08)' : 'var(--surface)',
-                  borderColor: myDelta > 0 ? 'rgba(87,204,153,0.4)' : myDelta < 0 ? 'rgba(230,57,70,0.3)' : 'var(--border)',
-                }}
-              >
-                <div style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '2rem',
-                  fontWeight: 900,
-                  color: myDelta > 0 ? 'var(--green)' : myDelta < 0 ? 'var(--red)' : 'var(--text3)',
-                }}>
-                  {myDelta > 0 ? '+' : ''}{myDelta}
-                </div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text3)' }}>
-                  {iGotItRight ? uniqueKnowledge === myId ? '✅ Only you knew — +25 unique bonus!' : '✅ You guessed right!' : myDelta >= 0 ? '' : noneRight ? '🐊 Nobody guessed right — −25 extra for all' : '🐊 Croc got you'}
-                  {fooledCount > 0 && ` · Fooled ${fooledCount} player${fooledCount > 1 ? 's' : ''}`}
-                </div>
-              </motion.div>
-            )}
 
-            {/* Options revealed */}
+            {/* Revealed options so far */}
             <div className="col gap-8">
               {options.map((opt, idx) => {
-                const author = opt.authorId ? game?.players?.[opt.authorId] : null
+                const isRevealed = revealIdx >= 0 && idx <= revealIdx - 1
+                if (!isRevealed) return null
+                const author = opt.authorId && !opt.isHouse ? game?.players?.[opt.authorId] : null
                 const votesForThis = Object.values(votes).filter(v => Number(v) === idx).length
+                const iVotedFor = votes[myId] !== undefined && Number(votes[myId]) === idx
 
                 return (
                   <motion.div
                     key={idx}
                     className="card"
-                    initial={{ opacity: 0, x: -8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.1 + idx * 0.06 }}
+                    initial={{ opacity: 0, scale: 0.95, y: 6 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 22 }}
                     style={{
-                      background: opt.isReal ? 'rgba(30,107,60,0.12)' : 'var(--surface)',
-                      borderColor: opt.isReal ? 'rgba(30,107,60,0.45)' : 'var(--border)',
+                      background: opt.isReal
+                        ? 'rgba(30,107,60,0.12)'
+                        : iVotedFor
+                        ? 'rgba(181,42,42,0.08)'
+                        : 'var(--surface)',
+                      borderColor: opt.isReal
+                        ? 'rgba(30,107,60,0.45)'
+                        : iVotedFor
+                        ? 'rgba(181,42,42,0.3)'
+                        : 'var(--border)',
                     }}
                   >
                     <div className="row gap-10" style={{ alignItems: 'flex-start' }}>
@@ -358,11 +416,17 @@ export default function CrocScreen() {
                           {opt.isReal && '🐊 '}{opt.text}
                         </div>
                         <div style={{ marginTop: 4, fontSize: '0.72rem', color: 'var(--text3)' }}>
-                          {opt.isReal ? 'The real answer' : author ? `Written by ${author.name}` : ''}
-                          {votesForThis > 0 && ` · ${votesForThis} vote${votesForThis > 1 ? 's' : ''}`}
+                          {opt.isReal
+                            ? `✅ The real answer${votesForThis > 0 ? ` · ${votesForThis} got it right (+300 each)` : ''}`
+                            : opt.isHouse
+                            ? `🏠 House lie${votesForThis > 0 ? ` · ${votesForThis} fell for it (no points)` : ''}`
+                            : author
+                            ? `${author.name}'s lie${votesForThis > 0 ? ` · ${votesForThis} vote${votesForThis > 1 ? 's' : ''} = +${votesForThis * 200} for ${author.name.split(' ')[0]}` : ''}`
+                            : ''}
+                          {iVotedFor && !opt.isReal && ' · You voted this 😬'}
                         </div>
                       </div>
-                      {author && !opt.isReal && (
+                      {author && !opt.isReal && !opt.isHouse && (
                         <Avatar src={author.avatar} name={author.name} colorHex={author.colorHex} size={28} />
                       )}
                     </div>
@@ -371,25 +435,59 @@ export default function CrocScreen() {
               })}
             </div>
 
-            {noneRight && (
-              <motion.div
-                className="card col center gap-4"
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
-                style={{ background: 'rgba(181,42,42,0.08)', borderColor: 'rgba(181,42,42,0.3)' }}
-              >
-                <div style={{ fontSize: '1.2rem' }}>🐊💀</div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--red)', fontWeight: 700 }}>Nobody got it right — −25 for everyone!</div>
-              </motion.div>
-            )}
+            {/* Score summary — shown only once all revealed */}
+            <AnimatePresence>
+              {allRevealed && myDelta !== undefined && (
+                <motion.div
+                  className="card col center gap-4"
+                  initial={{ scale: 0.85, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+                  style={{
+                    background: myDelta > 0 ? 'rgba(87,204,153,0.1)' : 'var(--surface)',
+                    borderColor: myDelta > 0 ? 'rgba(87,204,153,0.4)' : 'var(--border)',
+                  }}
+                >
+                  <div style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '2rem',
+                    fontWeight: 900,
+                    color: myDelta > 0 ? 'var(--green)' : 'var(--text3)',
+                  }}>
+                    {myDelta > 0 ? '+' : ''}{myDelta}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text3)', textAlign: 'center' }}>
+                    {iKnewIt && '🧠 +100 knowledge '}
+                    {iGotItRight && (uniqueKnowledge === myId ? '✅ Only you knew — +75 unique bonus!' : '✅ Found the truth (+300)')}
+                    {fooledCount > 0 && ` · Fooled ${fooledCount} player${fooledCount > 1 ? 's' : ''} (+${fooledCount * 200})`}
+                    {myDelta === 0 && '🐊 Croc got you'}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-            {/* Next question / end round */}
-            {isController && (
+            {/* Controller buttons */}
+            {isController && !allRevealed && (
+              <motion.button
+                className="btn btn-primary btn-lg btn-block"
+                onClick={handleRevealNext}
+                disabled={loading}
+                whileTap={{ scale: 0.97 }}
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
+                style={{ background: '#1e6b3c', borderColor: '#1e6b3c' }}
+              >
+                {loading
+                  ? <div className="loading-dots"><span /><span /><span /></div>
+                  : revealIdx < 0 ? 'Start Reveal →' : `Reveal Next → (${revealIdx + 1}/${options.length})`}
+              </motion.button>
+            )}
+            {isController && allRevealed && (
               <motion.button
                 className="btn btn-primary btn-lg btn-block"
                 onClick={handleNext}
                 disabled={loading}
                 whileTap={{ scale: 0.97 }}
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
+                initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
                 style={{ background: '#1e6b3c', borderColor: '#1e6b3c' }}
               >
                 {loading
@@ -399,7 +497,7 @@ export default function CrocScreen() {
             )}
             {!isController && (
               <motion.div className="card center" style={{ color: 'var(--accent)', fontSize: '0.85rem' }}
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}>
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}>
                 <div className="loading-dots"><span /><span /><span /></div>
                 <div style={{ marginTop: 6 }}>Waiting for host…</div>
               </motion.div>

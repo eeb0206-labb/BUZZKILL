@@ -849,6 +849,7 @@ function CrocView({ game, players }) {
   const uniqueKnowledge = game?.crocUniqueKnowledge
   const qIndex = game?.crocQIndex || 0
   const totalQs = (game?.crocQuestions || []).length
+  const revealIdx = game?.crocRevealIdx ?? -1
   const activePlayers = players.filter(p => p.role === 'player')
 
   const submittedCount = Object.keys(bluffs).length
@@ -938,20 +939,24 @@ function CrocView({ game, players }) {
           </motion.div>
         )}
 
-        {/* Reveal phase: options with authors + score deltas */}
+        {/* Reveal phase: one-by-one controlled by crocRevealIdx from controller */}
         {phase === 'reveal' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {noneRight && (
-              <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-                style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(181,42,42,0.1)', border: '1.5px solid rgba(181,42,42,0.35)', textAlign: 'center', fontSize: '0.85rem', fontWeight: 700, color: '#e05252' }}>
-                🐊 Nobody guessed right — extra −25 for everyone!
-              </motion.div>
+            {revealIdx < 0 && (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', color: 'var(--text3)' }}>
+                🐊 Controller reveals each answer one by one…
+              </div>
             )}
             {options.map((opt, idx) => {
-              const author = opt.authorId ? game?.players?.[opt.authorId] : null
+              const isRevealed = revealIdx >= 0 && idx <= revealIdx - 1
+              if (!isRevealed) return null
+              const author = opt.authorId && !opt.isHouse ? game?.players?.[opt.authorId] : null
               const vc = Object.values(votes).filter(v => Number(v) === idx).length
               return (
-                <motion.div key={idx} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.08 * idx }}
+                <motion.div key={idx}
+                  initial={{ opacity: 0, scale: 0.94, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  transition={{ type: 'spring', stiffness: 280, damping: 22 }}
                   style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 14px', borderRadius: 10,
                     background: opt.isReal ? 'rgba(30,107,60,0.12)' : 'var(--surface)',
                     border: `1.5px solid ${opt.isReal ? 'rgba(82,183,136,0.45)' : 'var(--border)'}`,
@@ -961,38 +966,45 @@ function CrocView({ game, players }) {
                       {opt.isReal && '🐊 '}{opt.text}
                     </div>
                     <div style={{ fontSize: '0.68rem', color: 'var(--text3)', marginTop: 2 }}>
-                      {opt.isReal ? `Real answer · ${vc} correct vote${vc !== 1 ? 's' : ''}` : author ? `${author.name}'s bluff · ${vc} vote${vc !== 1 ? 's' : ''} = +${vc * 25}pts` : ''}
+                      {opt.isReal
+                        ? `✅ Real answer · ${vc} got it right (+300 each)`
+                        : opt.isHouse
+                        ? `🏠 House lie · ${vc} fell for it (no points)`
+                        : author
+                        ? `${author.name}'s lie · ${vc} vote${vc !== 1 ? 's' : ''} = +${vc * 200} pts`
+                        : ''}
                     </div>
                   </div>
-                  {author && !opt.isReal && (
+                  {author && !opt.isReal && !opt.isHouse && (
                     <Avatar src={author.avatar} name={author.name} colorHex={author.colorHex} size={28} />
                   )}
                 </motion.div>
               )
             })}
-            {/* Player score deltas */}
-            {Object.keys(scoreDeltas).length > 0 && (
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+            {/* Score deltas shown only after all revealed */}
+            {revealIdx >= options.length && options.length > 0 && Object.keys(scoreDeltas).length > 0 && (
+              <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+                style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
                 {Object.entries(scoreDeltas).map(([pid, delta], i) => {
                   const p = game?.players?.[pid]
                   if (!p) return null
                   const isUnique = pid === uniqueKnowledge
                   return (
-                    <motion.div key={pid} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.3 + i * 0.06 }}
+                    <motion.div key={pid} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.1 + i * 0.06 }}
                       style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 20,
-                        background: delta > 0 ? 'rgba(87,204,153,0.1)' : delta < 0 ? 'rgba(230,57,70,0.08)' : 'var(--surface)',
-                        border: `1.5px solid ${delta > 0 ? 'rgba(87,204,153,0.4)' : delta < 0 ? 'rgba(230,57,70,0.3)' : 'var(--border)'}`,
+                        background: delta > 0 ? 'rgba(87,204,153,0.1)' : 'var(--surface)',
+                        border: `1.5px solid ${delta > 0 ? 'rgba(87,204,153,0.4)' : 'var(--border)'}`,
                       }}>
                       <Avatar src={p.avatar} name={p.name} colorHex={p.colorHex} size={22} />
                       <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>{p.name.split(' ')[0]}</span>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', fontWeight: 700, color: delta > 0 ? 'var(--green)' : delta < 0 ? 'var(--red)' : 'var(--text3)' }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', fontWeight: 700, color: delta > 0 ? 'var(--green)' : 'var(--text3)' }}>
                         {delta > 0 ? '+' : ''}{delta}
                       </span>
                       {isUnique && <span title="Unique knowledge bonus">⭐</span>}
                     </motion.div>
                   )
                 })}
-              </div>
+              </motion.div>
             )}
           </motion.div>
         )}
@@ -2494,7 +2506,7 @@ function LobbyView({ game }) {
 // Auto-hides after 5s of inactivity; any mouse move / touch reveals it.
 // ── Buzz TV corner ────────────────────────────────────────────────────────────
 
-function TVBuzzCorner({ game, gameCode }) {
+export function TVBuzzCorner({ game, gameCode, hidden = false }) {
   const store = useStore()
   const settings = store.getSettings()
   const aiHost = settings.aiHost ?? true
@@ -2861,6 +2873,7 @@ function TVBuzzCorner({ game, gameCode }) {
   }, [game?.mmuPhase])
 
   if (!aiHost || game?.settings?.questionMaster) return null
+  if (hidden) return null
 
   return (
     <div style={{

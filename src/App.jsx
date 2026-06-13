@@ -17,7 +17,7 @@ import QuizHostScreen from './screens/QuizHostScreen'
 import QuizPlayerScreen from './screens/QuizPlayerScreen'
 import RoundOverScreen from './screens/RoundOverScreen'
 import FinalScreen from './screens/FinalScreen'
-import GameScreen from './screens/GameScreen'
+import GameScreen, { TVBuzzCorner } from './screens/GameScreen'
 import VoteScreen from './screens/VoteScreen'
 import DrawScreen from './screens/DrawScreen'
 import DevAdminScreen from './screens/DevAdminScreen'
@@ -166,6 +166,13 @@ export default function App() {
   const isController = useStore(s => s.isController())
   const gameCode = useStore(s => s.gameCode)
   const setScreen = useStore(s => s.setScreen)
+  const game = useStore(s => s.game)
+
+  // When no gamescreen device is in the game, mount TVBuzzCorner on the controller's
+  // device so audio plays even without a dedicated TV screen.
+  const hasGameScreen = Object.values(game?.players || {}).some(p => p.role === 'gamescreen')
+  const gameInProgress = game?.state && !['lobby', 'genre-vote', 'genre-reveal', 'round-pick'].includes(game.state)
+  const showFallbackAudio = isController && !hasGameScreen && gameInProgress && myRole !== 'gamescreen'
 
   // Auto-redirect to join screen when ?code= is in the URL (e.g. from QR scan)
   useEffect(() => {
@@ -217,6 +224,9 @@ export default function App() {
           <ScreenComponent />
         </motion.div>
       </AnimatePresence>
+
+      {/* Audio fallback — fires Buzz speech on controller's device when no TV screen is present */}
+      {showFallbackAudio && <TVBuzzCorner game={game} gameCode={gameCode} hidden />}
 
       {/* Global game-paused overlay */}
       <AnimatePresence>
